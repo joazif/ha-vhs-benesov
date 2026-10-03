@@ -1,0 +1,29 @@
+name: Release
+
+# Ke každému vydání přiloží ZIP s integrací. HACS ho díky zip_release
+# v hacs.json stahuje místo zdrojového archivu - a GitHub na rozdíl
+# od zdrojáků počítá, kolikrát se příloha stáhla.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Zabalit integraci
+        working-directory: custom_components/vhs_benesov
+        run: zip -r vhs_benesov.zip . -x "*.pyc" -x "__pycache__/*"
+
+      - name: Přiložit k vydání
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            custom_components/vhs_benesov/vhs_benesov.zip --clobber

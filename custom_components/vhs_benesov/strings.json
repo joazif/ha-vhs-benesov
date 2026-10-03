@@ -1,0 +1,123 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Přihlášení do dálkových odečtů VHS Benešov",
+        "description": "Zadejte stejné údaje, kterými se hlásíte na portálu dálkových odečtů.",
+        "data": {
+          "username": "Login",
+          "password": "Heslo",
+          "import_history": "Stáhnout historická data",
+          "units": "Jednotky objemu"
+        },
+        "data_description": {
+          "import_history": "Po přidání jednorázově stáhne z portálu celou dostupnou historii spotřeby a zapíše ji do grafů, aby byl vidět vývoj v čase. Trvá to několik minut a běží na pozadí.",
+          "units": "Litry nebo m³ pro stav vodoměru a spotřeby. Jde změnit později v nastavení integrace."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Nové heslo",
+        "description": "Heslo pro {login} přestalo platit. Zadejte aktuální.",
+        "data": {
+          "password": "Heslo"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Nepodařilo se spojit s portálem.",
+      "invalid_auth": "Neplatný login nebo heslo."
+    },
+    "abort": {
+      "already_configured": "Toto měřidlo už je nastavené.",
+      "reauth_successful": "Heslo bylo aktualizováno.",
+      "wrong_account": "Přihlášení patří k jinému odběrnému místu, než je nastavené. Přidej ho jako novou službu."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Nastavení",
+        "data": {
+          "compare_months": "Za kolik měsíců srovnávat s loňskem",
+          "units": "Jednotky objemu"
+        },
+        "data_description": {
+          "compare_months": "Spotřeba posledních úplných měsíců proti stejným měsícům o rok dřív (senzory Změna oproti loňsku).",
+          "units": "Jednotka zobrazení pro stav vodoměru a spotřeby. Nastaví se všem senzorům s vodou; u jednotlivé entity ji jde změnit i v jejím nastavení."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "meter_index": {
+        "name": "Aktuální stav vodoměru"
+      },
+      "consumption_month": {
+        "name": "Spotřeba v tomto měsíci"
+      },
+      "last_reading": {
+        "name": "Poslední odečet"
+      },
+      "last_update": {
+        "name": "Poslední kontrola portálu"
+      },
+      "consumption_week": {
+        "name": "Spotřeba tento týden"
+      },
+      "day_part_00": {
+        "name": "00–06 h"
+      },
+      "day_part_06": {
+        "name": "06–12 h"
+      },
+      "day_part_12": {
+        "name": "12–18 h"
+      },
+      "day_part_18": {
+        "name": "18–24 h"
+      },
+      "history_status": {
+        "name": "Stav historie"
+      },
+      "last_complete_day": {
+        "name": "Spotřeba poslední úplný den"
+      },
+      "last_complete_day_date": {
+        "name": "Den spotřeby"
+      },
+      "change_vs_last_year": {
+        "name": "Změna oproti loňsku v %"
+      },
+      "change_vs_last_year_m3": {
+        "name": "Změna oproti loňsku v objemu"
+      },
+      "compare_period": {
+        "name": "Změna oproti loňsku za období"
+      }
+    },
+    "button": {
+      "refresh": {
+        "name": "Aktualizovat"
+      },
+      "refresh_history": {
+        "name": "Stáhnout historii"
+      }
+    }
+  },
+  "selector": {
+    "compare_months": {
+      "options": {
+        "1": "1 měsíc",
+        "3": "3 měsíce",
+        "6": "6 měsíců"
+      }
+    },
+    "units": {
+      "options": {
+        "l": "Litry (l)",
+        "m3": "Metry krychlové (m³)"
+      }
+    }
+  }
+}

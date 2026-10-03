@@ -1,0 +1,10 @@
+<html><body><div id="menu"><a href="Site.aspx">Domů</a>
+<a href="Site_Energie.aspx?Affichage=ConsoJour">Denní spotřeba</a>
+<a href="Site_Energie.aspx?Affichage=IndexJour&amp;IndexesSepares=true&amp;PeriodeComplete=false">Historie stavů měřidla</a>
+<a href="Site_Energie.aspx?Affichage=IndexMois&amp;IndexesSepares=true&amp;PeriodeComplete=false">Měsíční stavy měřidla</a></div>
+<div id="ctl00_DIVZoneDroite"><h2>Denní spotřeba</h2>
+<div>Křivka spotřeby 29.09.2026 &bull; 234 l</div>
+<span>12345-XX-0000001</span>
+<div>Poslední odečet z 29.09.2026 17:42</div></div>
+<script>$.jqplot('x', [[[1, 5, 'a', 'b']]]);
+var indexMeter_0 = new odometer(ctx,{digits: 6,decimals: 3,value: 0});updateOdometerIndex_0 = function() {var val = indexMeter_0.getValue() + 18.23390;if (val > 912.40000) val = 912.40000;indexMeter_0.setValue(val);setTimeout('updateOdometerIndex_0();', 40);};</script></body></html>

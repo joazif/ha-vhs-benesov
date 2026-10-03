@@ -1,0 +1,17 @@
+{
+  "domain": "vhs_benesov",
+  "name": "VHS Benešov - dálkové odečty",
+  "codeowners": [
+    "@joazif"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "recorder"
+  ],
+  "documentation": "https://github.com/joazif/ha-vhs-benesov",
+  "integration_type": "device",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/joazif/ha-vhs-benesov/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
+.idea/
+.vscode/
+# Nikdy do repa: uložené stránky z přihlášeného účtu
+*.local.html
+config/
+.env
+*.local.json
+*.local.csv
+*.local.log
+*.local.env
+*.local.*
+tools/ikony_varianty/

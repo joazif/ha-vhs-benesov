@@ -1,0 +1,123 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Sign in to VHS Benešov remote meter reading",
+        "description": "Enter the same credentials you use on the remote reading portal.",
+        "data": {
+          "username": "Login",
+          "password": "Password",
+          "import_history": "Download historical data",
+          "units": "Volume units"
+        },
+        "data_description": {
+          "import_history": "After setup, downloads the full consumption history from the portal once and writes it to the charts so the trend over time is visible. Takes a few minutes and runs in the background.",
+          "units": "Litres or m³ for the meter reading and consumption. Can be changed later in the integration settings."
+        }
+      },
+      "reauth_confirm": {
+        "title": "New password",
+        "description": "The password for {login} no longer works. Enter the current one.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to the portal.",
+      "invalid_auth": "Invalid login or password."
+    },
+    "abort": {
+      "already_configured": "This meter is already configured.",
+      "reauth_successful": "Password updated.",
+      "wrong_account": "This login belongs to a different metering point than the configured one. Add it as a new service."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Settings",
+        "data": {
+          "compare_months": "Months to compare with last year",
+          "units": "Volume units"
+        },
+        "data_description": {
+          "compare_months": "Consumption of the last complete months against the same months a year earlier.",
+          "units": "Display unit for the meter reading and consumption sensors. Applied to all water sensors; it can still be changed per entity in its settings."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "meter_index": {
+        "name": "Meter reading"
+      },
+      "consumption_month": {
+        "name": "Consumption this month"
+      },
+      "last_reading": {
+        "name": "Last reading"
+      },
+      "last_update": {
+        "name": "Last portal check"
+      },
+      "consumption_week": {
+        "name": "Consumption this week"
+      },
+      "day_part_00": {
+        "name": "00–06 h"
+      },
+      "day_part_06": {
+        "name": "06–12 h"
+      },
+      "day_part_12": {
+        "name": "12–18 h"
+      },
+      "day_part_18": {
+        "name": "18–24 h"
+      },
+      "history_status": {
+        "name": "History status"
+      },
+      "last_complete_day": {
+        "name": "Consumption last complete day"
+      },
+      "last_complete_day_date": {
+        "name": "Day of consumption"
+      },
+      "change_vs_last_year": {
+        "name": "Change vs last year in %"
+      },
+      "change_vs_last_year_m3": {
+        "name": "Change vs last year in volume"
+      },
+      "compare_period": {
+        "name": "Change vs last year period"
+      }
+    },
+    "button": {
+      "refresh": {
+        "name": "Update"
+      },
+      "refresh_history": {
+        "name": "Download history"
+      }
+    }
+  },
+  "selector": {
+    "compare_months": {
+      "options": {
+        "1": "1 month",
+        "3": "3 months",
+        "6": "6 months"
+      }
+    },
+    "units": {
+      "options": {
+        "l": "Litres (l)",
+        "m3": "Cubic metres (m³)"
+      }
+    }
+  }
+}
