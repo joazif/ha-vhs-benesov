@@ -79,6 +79,7 @@ class FakePortal:
         self.retry_after: str | None = None
         self.logins = 0
         self.user_agents: set[str] = set()
+        self.empty_current_index = False      # nový měsíc bez prvního odečtu
         self.energy_requests = 0         # kolikrát si klient vyžádal stránky se spotřebou
 
     @staticmethod
@@ -143,6 +144,8 @@ class FakePortal:
         }[mode]
         if mode == "IndexJour" and "Annee" not in request.query:
             assert request.query["IndexesSepares"] == "true"
+            if self.empty_current_index and self._authed(request):
+                return web.Response(text="<html><body>bez dat</body></html>", content_type="text/html")
         if "Annee" in request.query and self._authed(request):
             return self._month(request, mode)
         if mode == "ConsoJour" and self.consojour_html and self._authed(request):
@@ -216,6 +219,16 @@ async def test_requests_identify_the_integration_and_link_to_its_repository(port
     assert portal.user_agents == {api.USER_AGENT}
     assert "HomeAssistant vhs_benesov" in api.USER_AGENT
     assert "https://github.com/joazif/ha-vhs-benesov" in api.USER_AGENT
+
+
+async def test_new_month_without_a_reading_falls_back_to_the_previous_months_index(portal):
+    portal.empty_current_index = True
+    client, session = make_client()
+    data = await client.async_fetch_all()
+    await session.close()
+    assert data.daily_index_m3, "stavy se mají vzít z měsíce posledního odečtu"
+    assert max(d.day for d in data.daily_index_m3).month == data.last_reading.month
+    assert data.index_m3 is not None
 
 
 async def test_probe_reads_only_the_home_page(portal):

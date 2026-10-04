@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import datetime, timedelta
 
 from homeassistant.config_entries import ConfigEntry
@@ -60,6 +61,8 @@ class VhsBenesovCoordinator(DataUpdateCoordinator[MeterData]):
         # Čas posledního celého stažení dat; None do prvního úspěchu.
         self.last_full: datetime | None = None
         self._force_full = False
+        # Volá se s novými daty po každém úspěšném načtení (doplňování statistiky spotřeby).
+        self.on_new_data: Callable[[MeterData], None] | None = None
         self._auth_failures = 0
         # Doplní se v async_setup_entry; None dokud import historie neexistuje.
         self.history = None
@@ -107,4 +110,6 @@ class VhsBenesovCoordinator(DataUpdateCoordinator[MeterData]):
             raise UpdateFailed(str(err)) from err
         self._auth_failures = 0
         self.last_success = dt_util.now()
+        if self.on_new_data is not None:
+            self.on_new_data(data)
         return data

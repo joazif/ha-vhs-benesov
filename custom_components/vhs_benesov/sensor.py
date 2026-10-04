@@ -115,7 +115,9 @@ SENSORS: tuple[VhsSensorDescription, ...] = (
         translation_key="meter_index",
         device_class=SensorDeviceClass.WATER,
         native_unit_of_measurement=UnitOfVolume.CUBIC_METERS,
-        state_class=SensorStateClass.TOTAL_INCREASING,
+        # Bez state_class: HA by si jinak vedl vlastní statistiku ze změn stavu, a ta je kvůli
+        # zpoždění portálu o hodiny až půl dne posunutá. Správnou vede statistika spotřeby
+        # (importer.py), kterou si uživatel vybírá v grafech a Energy dashboardu.
         suggested_display_precision=3,
         value_fn=lambda d: d.index_m3,
     ),
@@ -332,6 +334,11 @@ class HistoryStatusSensor(VhsBenesovEntity, SensorEntity):
         if status.total:
             attrs["postup"] = f"{status.done}/{status.total}"
             attrs["postup_procent"] = status.percent
+        attrs["statistika"] = importer.statistic_id
+        if status.finished:
+            attrs["dokonceno"] = status.finished
+        if status.written_to:
+            attrs["zapsano_do"] = status.written_to
         if status.first:
             attrs["od"] = status.first
             attrs["do"] = status.last

@@ -7,9 +7,8 @@ from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform, UnitOfVo
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
-from .api import VhsBenesovClient
+from .api import MeterData, VhsBenesovClient
 from .const import (
-    CONF_IMPORT_HISTORY,
     CONF_UNITS,
     DATA_UNITS_APPLIED,
     DEFAULT_UNITS,
@@ -49,12 +48,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: VhsBenesovConfigEntry) -
     # Listener až po úpravách identifikátoru a jednotek, ať nevyvolají znovunačtení.
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
 
-    # Historii stahujeme jen když si ji uživatel při přidání vyžádal a ještě
-    # se nepovedla. Běží na pozadí, ať nezdržuje start integrace.
-    if entry.options.get(CONF_IMPORT_HISTORY) and not await coordinator.history.async_is_done():
+    # Statistiku spotřeby (celá historie a doplňování o nové dny) obsluhuje importér na pozadí,
+    # ať nezdržuje start integrace ani aktualizaci dat. Po startu a po každé další
+    # aktualizaci zjistí, jestli je co zapsat.
+    importer = coordinator.history
+
+    def _schedule_series_update(data: MeterData, *, startup: bool = False) -> None:
         entry.async_create_background_task(
-            hass, coordinator.history.async_import(), f"{DOMAIN}_history"
+            hass, importer.async_on_update(data, startup=startup), f"{DOMAIN}_series"
         )
+
+    # Háček, ne posluchač koordinátoru: posluchače se volají i při změně stavu importu.
+    coordinator.on_new_data = _schedule_series_update
+    entry.async_on_unload(lambda: setattr(coordinator, "on_new_data", None))
+    _schedule_series_update(coordinator.data, startup=True)
     return True
 
 

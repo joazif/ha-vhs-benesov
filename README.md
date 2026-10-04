@@ -13,7 +13,7 @@
   <img alt="Verze" src="https://img.shields.io/github/v/release/joazif/ha-vhs-benesov?style=flat-square&color=00529c&label=verze">
   <img alt="Stažení" src="https://img.shields.io/github/downloads/joazif/ha-vhs-benesov/total?style=flat-square&color=00529c&label=sta%C5%BEen%C3%AD">
   <img alt="HACS" src="https://img.shields.io/badge/HACS-vlastn%C3%AD%20repozit%C3%A1%C5%99-00529c?style=flat-square">
-  <img alt="Home Assistant" src="https://img.shields.io/badge/Home%20Assistant-2024.6%2B-00529c?style=flat-square">
+  <img alt="Home Assistant" src="https://img.shields.io/badge/Home%20Assistant-2026.9%2B-00529c?style=flat-square">
 </p>
 
 > [!WARNING]
@@ -25,10 +25,10 @@
 
 ## Co to umí
 
-- **Stav vodoměru** v m³ pro Energy dashboard a **spotřeba** za poslední úplný den, týden
-  a měsíc, včetně **změny oproti loňsku**.
-- **Celá historie spotřeby** od začátku dálkových odečtů: při přidání se jednorázově stáhne
-  a zapíše do grafů, takže je vidět vývoj v čase.
+- **Stav vodoměru** a **spotřeba** za poslední úplný den, týden a měsíc, včetně **změny oproti
+  loňsku**.
+- **Vlastní statistika spotřeby** po hodinách pro grafy a Energy dashboard: celá historie od
+  začátku dálkových odečtů a průběžné doplňování, každá spotřeba ve správném dni.
 - **Víc měřidel:** každé přihlášení je samostatná služba.
 - Při vypršení nebo změně hesla nabídne Home Assistant nové přihlášení.
 
@@ -87,8 +87,10 @@ zvolil (výchozí litry, viz Jednotky); atributy s `_m3` v názvu jsou vždy v m
 | Změna oproti loňsku za období | `6–8/2026 vs 6–8/2025` | — |
 
 - **Aktuální stav vodoměru** je stav z číselníku na hlavní stránce portálu, tedy stejné číslo
-  jako u *Poslední odečet*. Má `state_class: total_increasing`, takže ho Home Assistant
-  ukládá do dlouhodobých statistik a jde přidat do Energy dashboardu.
+  jako u *Poslední odečet*. Je to jen ukazatel aktuálního stavu bez `state_class`, takže
+  si Home Assistant k němu nevede vlastní dlouhodobou statistiku. Ta by byla kvůli zpoždění
+  portálu o hodiny až půl dne posunutá. Pro grafy a Energy dashboard slouží statistika spotřeby
+  (viz Historie spotřeby).
 - **Spotřeba poslední úplný den** je součet čtyř šestihodinových kroků dne, který portál zná
   celý. Den, ke kterému patří, ukazuje atribut `den` a v Diagnostice senzor *Den spotřeby*.
 - **Spotřeba tento týden** se počítá od pondělí do posledního dne, který portál zná, včetně
@@ -139,33 +141,54 @@ vodoměrem; kdy byl stav odečten, říká *Poslední odečet*. Navíc se zveře
 Časy si můžeš sledovat sám přes `tools/watch_updates.py`; jde o měření u jednoho měřidla a u jiného
 se mohou lišit.
 
+**Proč vlastní statistika:** statistiku senzoru stavu počítá Home Assistant ze změn jeho hodnoty,
+takže spotřebu zapíše do hodiny, kdy se hodnota na portálu objevila, a ne kdy voda tekla (denní
+sloupce jsou posunuté asi o půl dne). Proto integrace zapisuje i **vlastní statistiku spotřeby**,
+která každou hodinu zařadí tam, kam patří (viz níže).
+
 ## Historie spotřeby
 
-Při přidání s volbou **Stáhnout historická data** se na pozadí projdou všechny měsíce, které
-portál nabízí (od května 2022), a zapíšou se do statistik senzoru *Aktuální stav vodoměru*.
-Trvá to asi 3–4 minuty: požadavky jdou jeden po druhém s pauzou kolem 1,5 s a při odpovědi
-429 nebo 503 klient počká a zkusí to znovu.
+Integrace vede **vlastní statistiku spotřeby** `vhs_benesov:<měřidlo>_consumption` („Spotřeba vody
+(VHS Benešov)“, v m³). Hodinové řádky se skládají ze stavu měřidla po dnech a spotřeby po
+šesti hodinách tak, aby každá spotřeba skončila v hodině, do které patří.
 
+- **První naplnění:** Při přidání s volbou **Stáhnout historická data** se na pozadí projdou
+  všechny měsíce, které portál nabízí (od května 2022). Trvá to asi 3–4 minuty: požadavky jdou
+  jeden po druhém s pauzou kolem 1,5 s a při odpovědi 429 nebo 503 klient počká a zkusí to znovu.
+  Stejné naplnění proběhne samo po aktualizaci ze starší verze, která historii zapisovala do
+  statistiky senzoru.
+- **Průběžně:** Po každé změně dat na portálu se přepočítají poslední dny a zapíšou znovu. Počítají
+  se jen dokončené šestihodinové kroky, neúplný poslední den se nenatahuje na stav odečtu a po
+  zveřejnění zbytku se správně dopíše. Opakované zapsání týchž dat nic nezmění. Na přelomu měsíce
+  se předchozí měsíc dotáhne z portálu jen jednou, dokud nejsou jeho poslední kroky úplné.
 - **Průběh** je vidět v upozornění (zvoneček) a ve **Stavu historie**: `stahuji z portálu
-  (38/53 měsíců)`, `zapisuji do statistik`, nakonec `hotovo` nebo `chyba`. Stav „hotovo"
-  zůstane i po restartu.
+  (38/53 měsíců)`, `zapisuji do statistik`, nakonec `hotovo (04.10.2026 09:12)` s datem a časem, kdy
+  historie naposled doběhla, nebo `chyba`. Atributy: `statistika` (její ID), `zapsano_do`
+  (poslední zapsaná hodina), `dokonceno`, `od`, `do`, `zaznamu`. Stav zůstane i po restartu.
 - Nejjemnější data portálu jsou po **6 hodinách**. Hodinové statistiky se dopočítají, takže
   **den, týden, měsíc i rok jsou přesné**, jen rozlišení v rámci šesti hodin je odhad.
-- Součet je ukotvený tak, aby na historii živá data navázala bez skoku (historie proto končí
-  záporným součtem u nuly; Energy dashboard počítá jen rozdíly). Živá data se nepřepisují.
-- **Ochrana portálu:** import je zátěž (řádově stovka požadavků), proto se nespustí znovu,
+- **Statistika senzoru stavu** (`sensor.<měřidlo>_aktualni_stav_vodomeru`) už Home Assistant nevede
+  (senzor nemá `state_class`). Pokud jsi integraci používal už před touto změnou, HA ti ve Vývojářských
+  nástrojích → Statistiky nabídne **opravit** upozornění „statistika se už nezapisuje“ a starou
+  statistiku smazat; je posunutá o hodiny až půl dne, proto ji smaž a v grafech i Energy
+  dashboardu používej statistiku spotřeby.
+- **Ochrana portálu:** celý import je zátěž (řádově stovka požadavků), proto se nespustí znovu,
   dokud běží předchozí, a další je možný až **za den** po úspěšném (po chybě za čtvrt hodiny).
   Platí i pro tlačítko a restarty Home Assistantu. Když je import odmítnutý, ukáže to
-  upozornění s časem, kdy bude možný.
+  upozornění s časem, kdy bude možný; automatické naplnění po aktualizaci jen počká.
+- Po odstranění integrace statistika v databázi zůstane; smazat ji jde ve Vývojářských nástrojích
+  → Statistiky.
 
 ## Energy dashboard a grafy
 
 **Energy dashboard:** *Nastavení → Dashboardy → Energie → Přidat zdroj vody* a vyber
-*Aktuální stav vodoměru*. Díky historii uvidíš spotřebu i za dobu před instalací.
+**Spotřeba vody (VHS Benešov)** (statistika `vhs_benesov:<měřidlo>_consumption`). Díky historii
+uvidíš spotřebu i za dobu před instalací a každou hodinu ve správném dni.
 
 `<měřidlo>` v příkladech nahraď číslem svého měřidla zapsaným jako ID (např. `12345-XX-0000001`
 → `12345_xx_0000001`). ID entit vznikají z názvů při prvním přidání a **v jazyce Home Assistantu**,
-proto si je zkontroluj ve Vývojářských nástrojích → Stavy (filtr podle čísla měřidla).
+proto si je zkontroluj ve Vývojářských nástrojích → Stavy (filtr podle čísla měřidla). ID statistiky
+uvidíš ve Vývojářských nástrojích → Statistiky nebo v atributu `statistika` u *Stav historie*.
 
 **Karta přehledu:**
 
@@ -198,7 +221,7 @@ let jsou vedle sebe (např. září 2025 a září 2026). Pro denní sloupce za 
 type: statistics-graph
 title: Spotřeba po měsících
 entities:
-  - sensor.<měřidlo>_aktualni_stav_vodomeru
+  - vhs_benesov:<měřidlo>_consumption
 stat_types:
   - change
 chart_type: bar
@@ -230,8 +253,10 @@ apex_config:
   legend:
     fontSize: 12px
 series:
-  - entity: sensor.<měřidlo>_aktualni_stav_vodomeru
+  - entity: vhs_benesov:<měřidlo>_consumption
     name: Letos
+    unit: L
+    transform: "return x * 1000;"
     type: area
     color: "#4fc3f7"
     stroke_width: 2
@@ -244,8 +269,10 @@ series:
     group_by:
       func: last
       duration: 1d
-  - entity: sensor.<měřidlo>_aktualni_stav_vodomeru
+  - entity: vhs_benesov:<měřidlo>_consumption
     name: Loni
+    unit: L
+    transform: "return x * 1000;"
     type: line
     color: "#ff9800"
     stroke_width: 2

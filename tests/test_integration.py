@@ -80,7 +80,7 @@ async def test_sensors(hass: HomeAssistant):
 
     index = state("meter_index")
     assert float(index.state) == pytest.approx(911.695)
-    assert index.attributes["state_class"] == "total_increasing"
+    assert "state_class" not in index.attributes      # statistiku vede vlastní statistika spotřeby
     assert index.attributes["device_class"] == "water"
     assert index.attributes["unit_of_measurement"] == "m³"
     # Poslední úplný den (neúplný další den se nepočítá): 52 + 152 + 202 + 252 l.
@@ -434,16 +434,20 @@ def _at(delta):
 
 
 def _history(days=10) -> api.HistoryData:
-    """Deset dní zpět (do včerejška včetně), stav roste o 0,5 m³ denně."""
+    """Deset dní zpět (do včerejška včetně), stav roste o 0,5 m³ denně.
+
+    Křivka je úplná u posledních tří dnů, takže poslední dva jsou konečné a vznikne kontrolní bod.
+    """
     today = dt_util.now().date()
     first = today - timedelta(days=days)
     end = {
         first + timedelta(days=i): 900.0 + 0.5 * i for i in range(days)
     }
-    # Poslední den musí mít všechny čtyři kroky křivky, jinak se bere jako neúplný.
     last = max(end)
     curve = {
-        datetime(last.year, last.month, last.day, hour): 100.0 for hour in (0, 6, 12, 18)
+        datetime(d.year, d.month, d.day, hour): 100.0
+        for d in (last - timedelta(days=2), last - timedelta(days=1), last)
+        for hour in (0, 6, 12, 18)
     }
     return api.HistoryData(index_end=end, curve_liters=curve, months=1, first_month=first, last_month=today)
 
@@ -479,8 +483,12 @@ def _history_status(hass, entry):
     return hass.states.get(entity_id)
 
 
+STAT_ID = "vhs_benesov:12345_xx_0000001_consumption"     # podle čísla měřidla z _data()
+
+
 async def _entity_id(hass, entry):
-    return er.async_get(hass).async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_meter_index")
+    """Externí statistika spotřeby (dřív zápis do statistiky senzoru stavu)."""
+    return STAT_ID
 
 
 async def _setup(hass, entry, history):
@@ -494,32 +502,31 @@ async def _setup(hass, entry, history):
         return fetch
 
 
-async def test_history_is_imported_into_sensor_statistics(hass: HomeAssistant):
+async def test_history_is_imported_into_external_statistics(hass: HomeAssistant):
     entry = _entry_with_history()
     entry.add_to_hass(hass)
     fetch = await _setup(hass, entry, _history())
     assert fetch.call_count == 1
 
-    entity_id = await _entity_id(hass, entry)
-    rows = await _stats(hass, entity_id)
+    rows = await _stats(hass, STAT_ID)
     # První den nemá předchozí stav ani křivku, takže se přeskočí: 9 dní.
     assert len(rows) == 9 * 24
     assert rows[0]["start"] < rows[-1]["start"]
-    # Živá data začínají u nuly na stavu 905,0, historie musí končit u ní.
     assert rows[-1]["state"] == pytest.approx(900.0 + 0.5 * 9)
-    assert rows[-1]["sum"] == pytest.approx(rows[-1]["state"] - 905.0)
+    assert rows[-1]["sum"] == pytest.approx(0.5 * 9)           # součet spotřeby od začátku řady
     assert all(b["sum"] >= a["sum"] for a, b in zip(rows, rows[1:]))  # součet neklesá
-    assert rows[-1]["sum"] - rows[0]["sum"] == pytest.approx(0.5 * 9 - 0.5 / 24)
 
     status = _history_status(hass, entry)
-    assert status.state == "hotovo"
+    assert status.state.startswith("hotovo (")
     assert status.attributes["zaznamu"] == 216
     assert status.attributes["od"] and status.attributes["do"]
+    assert status.attributes["statistika"] == STAT_ID
+    assert status.attributes["zapsano_do"]
 
     saved = await storage.Store(hass, 1, f"{DOMAIN}.history.{entry.entry_id}").async_load()
-    assert saved["done"] is True and saved["anchor"] == 905.0
+    assert saved["done"] is True and saved["series_day"]      # kontrolní bod pro doplňování
     assert any(
-        n["notification_id"].startswith(f"{DOMAIN}_history_")
+        n["notification_id"].startswith(f"{DOMAIN}_history_") and STAT_ID in n["message"]
         for n in hass.data["persistent_notification"].values()
     )
 
@@ -582,43 +589,6 @@ async def test_failed_import_is_reported_and_retried_next_start(hass: HomeAssist
     with _at(timedelta(minutes=20)):
         fetch = await _setup(hass, entry, _history())
     assert fetch.call_count == 1
-
-
-async def test_history_stops_before_existing_live_statistics(hass: HomeAssistant):
-    """Senzor už statistiky zapisuje: historie končí před nimi a kotva z nich vyplyne."""
-    # Nejdřív jen entita bez historie, ať existuje entity_id a rekordér.
-    entry_plain = _entry_with_history(option=False)
-    entry_plain.add_to_hass(hass)
-    await _setup(hass, entry_plain, _history())
-    entity_id = await _entity_id(hass, entry_plain)
-
-    live_start = dt_util.utcnow().replace(minute=0, second=0, microsecond=0) - timedelta(days=3)
-    async_import_statistics(
-        hass,
-        {
-            "mean_type": StatisticMeanType.NONE, "has_sum": True, "name": None,
-            "source": "recorder", "statistic_id": entity_id,
-            "unit_class": "volume", "unit_of_measurement": "m³",
-        },
-        [{"start": live_start, "state": 902.0, "sum": 0.4}],
-    )
-    await async_wait_recording_done(hass)
-
-    with patch(f"{CLIENT}.async_fetch_all", return_value=_meter_data()), patch(
-        f"{CLIENT}.async_fetch_history", return_value=_history()
-    ):
-        # Změna voleb vyvolá znovunačtení integrace, které import spustí.
-        hass.config_entries.async_update_entry(entry_plain, options={CONF_IMPORT_HISTORY: True})
-        await hass.async_block_till_done(wait_background_tasks=True)
-        await async_wait_recording_done(hass)
-
-    rows = await _stats(hass, entity_id)
-    imported = [r for r in rows if r["start"] < live_start.timestamp()]
-    live = [r for r in rows if r["start"] >= live_start.timestamp()]
-    assert live[0]["state"] == 902.0 and live[0]["sum"] == pytest.approx(0.4)  # živý řádek nedotčen
-    assert imported, "historie před živými daty chybí"
-    # kotva = 902,0 - 0,4 = 901,6; sum = state - kotva
-    assert imported[-1]["sum"] == pytest.approx(imported[-1]["state"] - 901.6)
 
 
 # ---------------------------------------------------------------------------
@@ -853,7 +823,7 @@ async def test_history_status_shows_progress_while_downloading(hass: HomeAssista
         await hass.async_block_till_done()
 
     after = _history_status(hass, entry)
-    assert after.state == "hotovo"
+    assert after.state.startswith("hotovo (")
     assert "postup" not in after.attributes  # po dokončení se ukazuje výsledek, ne postup
 
 
@@ -862,12 +832,12 @@ async def test_history_status_survives_restart_as_done(hass: HomeAssistant):
     entry.add_to_hass(hass)
     await _setup(hass, entry, _history())
     done = _history_status(hass, entry)
-    assert done.state == "hotovo"
+    assert done.state.startswith("hotovo (")
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await _setup(hass, entry, _history())  # restart; historie se znovu nestahuje
     again = _history_status(hass, entry)
-    assert again.state == "hotovo"
+    assert again.state == done.state
     assert again.attributes["zaznamu"] == done.attributes["zaznamu"] == 216
     assert again.attributes["od"] == done.attributes["od"]
 
@@ -911,7 +881,7 @@ async def test_button_pressed_again_right_after_success_is_ignored(hass: HomeAss
         fetch = await _press_history_button(hass, entry, _history())
         assert fetch.call_count == 0
     assert "za 23 h" in _notification_text(hass, entry) or "Další stažení" in _notification_text(hass, entry)
-    assert _history_status(hass, entry).state == "hotovo"      # stav se nepokazil
+    assert _history_status(hass, entry).state.startswith("hotovo")   # stav se nepokazil
 
 
 async def test_button_allowed_again_after_a_day(hass: HomeAssistant):
@@ -939,7 +909,7 @@ async def test_after_failure_retry_is_allowed_only_after_quarter_of_hour(hass: H
     assert "Další stažení" in _notification_text(hass, entry)
     with _at(timedelta(minutes=16)):
         assert (await _press_history_button(hass, entry, _history())).call_count == 1
-    assert _history_status(hass, entry).state == "hotovo"
+    assert _history_status(hass, entry).state.startswith("hotovo")
 
 
 async def test_restart_loop_after_failure_does_not_hammer_portal(hass: HomeAssistant):
@@ -965,7 +935,7 @@ async def test_cooldown_survives_restart_via_storage(hass: HomeAssistant):
     await _setup(hass, entry, _history())
     saved = await storage.Store(hass, 1, f"{DOMAIN}.history.{entry.entry_id}").async_load()
     assert saved["last_ok"] is True and saved["last_run"]
-    assert saved["done"] is True and saved["anchor"] == 905.0   # slučování nic nesmazalo
+    assert saved["done"] is True and saved["series_day"]        # slučování nic nesmazalo
 
 
 async def test_update_button_is_rate_limited(hass: HomeAssistant):
@@ -1295,7 +1265,7 @@ async def test_meter_sensor_shows_odometer_reading_not_end_of_previous_day(hass:
     assert float(state.state) == pytest.approx(912.027)
     assert state.attributes["stav_k_datu"] == "2026-09-30"
     assert state.attributes["stav_k_casu"] == "2026-09-30T05:42:00"
-    assert state.attributes["state_class"] == "total_increasing"
+    assert "state_class" not in state.attributes
 
 
 # ---------------------------------------------------------------------------
@@ -1393,8 +1363,8 @@ async def test_manual_unit_change_of_one_entity_survives_restart(hass: HomeAssis
     assert states["meter_index"].attributes["unit_of_measurement"] == "L"         # ostatní beze změny
 
 
-async def test_history_import_stays_in_cubic_metres_with_litres_displayed(hass: HomeAssistant):
-    """Regrese: při zobrazení v litrech se kotva nesmí číst v litrech (tisíckrát víc)."""
+async def test_external_statistic_stays_in_cubic_metres_with_litres_displayed(hass: HomeAssistant):
+    """Statistika je v m³ bez ohledu na to, v čem se zobrazují senzory (litry jsou výchozí)."""
     entry = MockConfigEntry(
         domain=DOMAIN, unique_id="0000000000",
         data={CONF_USERNAME: "0000000000", CONF_PASSWORD: "heslo"},
@@ -1404,10 +1374,10 @@ async def test_history_import_stays_in_cubic_metres_with_litres_displayed(hass: 
     await _setup(hass, entry, _history())
     states = await _unit_states(hass, entry)
     assert states["meter_index"].attributes["unit_of_measurement"] == "L"
-    rows = await _stats(hass, await _entity_id(hass, entry))
+    rows = await _stats(hass, STAT_ID)
     assert len(rows) == 9 * 24
     assert rows[-1]["state"] == pytest.approx(904.5)                       # m³, ne 904 500
-    assert rows[-1]["sum"] == pytest.approx(rows[-1]["state"] - 905.0)     # kotva v m³
+    assert rows[-1]["sum"] == pytest.approx(0.5 * 9)
 
 
 async def test_units_are_chosen_in_the_first_step_of_the_setup_form(hass: HomeAssistant):
@@ -1614,56 +1584,6 @@ def test_month_sensor_is_unknown_without_overview():
         assert sensor._this_month_m3(api.MeterData(monthly_m3=[api.DayValue(date(2026, 11, 1), 5.0)])) is None
 
 
-async def test_history_ending_above_anchor_is_cut_and_joins_live_data_without_jump(
-    hass: HomeAssistant,
-):
-    """Portál zveřejňuje se zpožděním, takže stav senzoru je starší než konec historie."""
-    entry = _entry_with_history()
-    entry.add_to_hass(hass)
-    with patch(f"{CLIENT}.async_fetch_all", return_value=_meter_data(index=904.0)), patch(
-        f"{CLIENT}.async_fetch_history", return_value=_history()
-    ):
-        await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done(wait_background_tasks=True)
-        await async_wait_recording_done(hass)
-        await hass.async_block_till_done(wait_background_tasks=True)
-
-    rows = await _stats(hass, await _entity_id(hass, entry))
-    assert rows
-    assert all(r["state"] <= 904.0 + 1e-6 for r in rows)
-    assert all(r["sum"] <= 1e-9 for r in rows)            # nic kladného před živými daty
-    assert rows[-1]["sum"] == pytest.approx(0.0)
-    assert all(b["sum"] >= a["sum"] - 1e-9 for a, b in zip(rows, rows[1:]))   # bez záporného skoku
-
-
-async def test_reimport_overwrites_rows_a_previous_version_wrote_above_the_anchor(
-    hass: HomeAssistant,
-):
-    entry = _entry_with_history()
-    entry.add_to_hass(hass)
-    await _setup(hass, entry, _history())                      # starší chování: kotva 905,0
-    entity_id = await _entity_id(hass, entry)
-    assert any(r["state"] > 904.0 for r in await _stats(hass, entity_id))
-
-    store = storage.Store(hass, 1, f"{DOMAIN}.history.{entry.entry_id}")
-    saved = await store.async_load()
-    await store.async_save({**saved, "anchor": 904.0})        # kotva starší než konec historie
-    button_id = er.async_get(hass).async_get_entity_id(
-        "button", DOMAIN, f"{entry.entry_id}_refresh_history"
-    )
-    with _at(timedelta(hours=25)), patch(
-        f"{CLIENT}.async_fetch_all", return_value=_meter_data(index=904.0)
-    ), patch(f"{CLIENT}.async_fetch_history", return_value=_history()):
-        await hass.services.async_call("button", "press", {"entity_id": button_id}, blocking=True)
-        await hass.async_block_till_done(wait_background_tasks=True)
-        await async_wait_recording_done(hass)
-
-    rows = await _stats(hass, entity_id)
-    assert all(r["state"] <= 904.0 + 1e-6 for r in rows)      # chybné řádky se přepsaly
-    assert all(r["sum"] <= 1e-9 for r in rows)
-    assert all(b["sum"] >= a["sum"] - 1e-9 for a, b in zip(rows, rows[1:]))
-
-
 def test_week_sensor_is_zero_when_the_new_days_are_not_yet_published():
     from custom_components.vhs_benesov import sensor
 
@@ -1717,3 +1637,243 @@ def test_selector_option_keys_in_translations_satisfy_hassfest():
         for selector in selectors.values():
             for key in selector["options"]:
                 assert re.fullmatch(r"[a-z0-9]([a-z0-9_-]*[a-z0-9])?", key), (name, key)
+
+
+async def test_history_status_shows_when_the_import_finished(hass: HomeAssistant):
+    entry = _entry_with_history()
+    entry.add_to_hass(hass)
+    await _setup(hass, entry, _history())
+    status = _history_status(hass, entry)
+    stamp = datetime.strptime(status.attributes["dokonceno"], "%d.%m.%Y %H:%M")
+    assert status.state == f"hotovo ({status.attributes['dokonceno']})"
+    assert abs(stamp - dt_util.now().replace(tzinfo=None)) < timedelta(minutes=5)
+
+    saved = await storage.Store(hass, 1, f"{DOMAIN}.history.{entry.entry_id}").async_load()
+    assert saved["finished"] > 0
+    # Záznam z dřívější verze bez času dokončení: ukáže se čas začátku posledního běhu.
+    store = storage.Store(hass, 1, f"{DOMAIN}.history.{entry.entry_id}")
+    legacy = {k: v for k, v in saved.items() if k != "finished"}
+    legacy["last_run"] = saved["finished"] - 3600
+    await store.async_save(legacy)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await _setup(hass, entry, _history())
+    older = _history_status(hass, entry)
+    assert older.state.startswith("hotovo (") and older.state != status.state
+
+
+# ---------------------------------------------------------------------------
+# Průběžné doplňování externí statistiky
+# ---------------------------------------------------------------------------
+
+
+def _series_data(days: int, complete: int, *, start_offset: int = 0) -> api.MeterData:
+    """Měsíční data portálu: stav po dnech a křivka úplná u prvních ``complete`` dnů.
+
+    Poslední den řady je odhad ze stavu posledního odečtu. Dny končí dneškem minus ``start_offset``.
+    """
+    today = dt_util.now().date() - timedelta(days=start_offset)
+    first = today - timedelta(days=days - 1)
+    data = _data()
+    data.daily_index_m3 = [
+        api.DayValue(first + timedelta(days=i), 100.0 + 0.5 * (i + 1)) for i in range(days)
+    ]
+    data.curve_liters = [
+        api.PointValue(datetime(d.year, d.month, d.day, h), 125.0)
+        for d in (first + timedelta(days=i) for i in range(complete))
+        for h in (0, 6, 12, 18)
+    ]
+    data.reading_m3 = data.daily_index_m3[-1].value
+    data.last_reading = datetime(today.year, today.month, today.day, 5, 42)
+    return data
+
+
+async def _refresh(hass, entry, data):
+    with patch(f"{CLIENT}.async_fetch_all", return_value=data):
+        await entry.runtime_data.async_refresh()
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await async_wait_recording_done(hass)
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+
+async def test_series_starts_from_current_data_even_when_history_is_declined(hass: HomeAssistant):
+    entry = _entry_with_history(option=False)
+    entry.add_to_hass(hass)
+    with patch(f"{CLIENT}.async_fetch_all", return_value=_series_data(6, 5)), patch(
+        f"{CLIENT}.async_fetch_history", return_value=_history()
+    ) as fetch:
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await async_wait_recording_done(hass)
+        await hass.async_block_till_done(wait_background_tasks=True)
+    assert fetch.call_count == 0                            # celá historie se nestahovala
+    rows = await _stats(hass, STAT_ID)
+    assert len(rows) == 5 * 24
+    assert rows[-1]["sum"] == pytest.approx(0.5 * 5)
+    assert all(b["sum"] >= a["sum"] for a, b in zip(rows, rows[1:]))
+
+
+async def test_new_portal_data_extends_the_series_without_a_jump(hass: HomeAssistant):
+    entry = _entry_with_history(option=False)
+    entry.add_to_hass(hass)
+    with patch(f"{CLIENT}.async_fetch_all", return_value=_series_data(6, 5)):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await async_wait_recording_done(hass)
+    first = await _stats(hass, STAT_ID)
+
+    # Portál zveřejnil další den: o jeden den víc ve stavech i v křivce.
+    await _refresh(hass, entry, _series_data(7, 6, start_offset=-1))
+    second = await _stats(hass, STAT_ID)
+    assert len(second) > len(first)
+    assert [r["start"] for r in second[: len(first)]] == [r["start"] for r in first]
+    for old, new in zip(first, second, strict=False):
+        assert new["sum"] == pytest.approx(old["sum"])        # zapsané řádky se nezměnily
+    assert all(b["sum"] >= a["sum"] for a, b in zip(second, second[1:]))
+    assert second[-1]["sum"] == pytest.approx(0.5 * 6)
+
+
+async def test_unchanged_portal_data_does_not_rewrite_the_statistic(hass: HomeAssistant):
+    from custom_components.vhs_benesov import importer as importer_module
+
+    entry = _entry_with_history(option=False)
+    entry.add_to_hass(hass)
+    data = _series_data(6, 5)
+    with patch(f"{CLIENT}.async_fetch_all", return_value=data):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await async_wait_recording_done(hass)
+    with patch.object(
+        importer_module, "async_add_external_statistics", wraps=importer_module.async_add_external_statistics
+    ) as write:
+        await _refresh(hass, entry, data)
+    assert write.call_count == 0
+
+
+async def test_old_style_history_triggers_one_full_import_into_the_new_statistic(
+    hass: HomeAssistant,
+):
+    """Instalace po starší verzi (historie ve statistice senzoru, bez kontrolního bodu)."""
+    entry = _entry_with_history(option=False)
+    entry.add_to_hass(hass)
+    await storage.Store(hass, 1, f"{DOMAIN}.history.{entry.entry_id}").async_save(
+        {"done": True, "live_from": 1.0, "anchor": 905.0, "last_ok": True,
+         "last_run": (dt_util.utcnow() - timedelta(days=3)).timestamp()}
+    )
+    fetch = await _setup(hass, entry, _history())
+    assert fetch.call_count == 1
+    assert len(await _stats(hass, STAT_ID)) == 9 * 24
+    saved = await storage.Store(hass, 1, f"{DOMAIN}.history.{entry.entry_id}").async_load()
+    assert saved["series_day"]
+
+
+async def test_old_style_history_waits_for_the_cooldown_without_nagging(hass: HomeAssistant):
+    entry = _entry_with_history(option=False)
+    entry.add_to_hass(hass)
+    await storage.Store(hass, 1, f"{DOMAIN}.history.{entry.entry_id}").async_save(
+        {"done": True, "anchor": 905.0, "last_ok": True,
+         "last_run": (dt_util.utcnow() - timedelta(hours=2)).timestamp()}
+    )
+    fetch = await _setup(hass, entry, _history())
+    assert fetch.call_count == 0                            # ještě je odpočinek
+    assert not any(
+        "nedávno" in n["message"]
+        for n in hass.data.get("persistent_notification", {}).values()
+    )
+    # Po odpočinku se import při další kontrole spustí sám.
+    with _at(timedelta(hours=23)), patch(f"{CLIENT}.async_fetch_all", return_value=_meter_data()), patch(
+        f"{CLIENT}.async_fetch_history", return_value=_history()
+    ) as later:
+        await entry.runtime_data.async_refresh()
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await async_wait_recording_done(hass)
+    assert later.call_count == 1
+    assert len(await _stats(hass, STAT_ID)) == 9 * 24
+
+
+async def test_month_turn_fetches_the_previous_month_once_to_finish_its_last_steps(
+    hass: HomeAssistant,
+):
+    entry = _entry_with_history(option=False)
+    entry.add_to_hass(hass)
+    today = dt_util.now().date()
+    first_of_month = today.replace(day=1)
+    prev_month_day = first_of_month - timedelta(days=1)
+    with patch(f"{CLIENT}.async_fetch_all", return_value=_data()):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done(wait_background_tasks=True)
+    # Kontrolní bod zůstal na posledním dni minulého měsíce.
+    await storage.Store(hass, 1, f"{DOMAIN}.history.{entry.entry_id}").async_save(
+        {"done": True, "written_to": 1.0, "series_day": prev_month_day.isoformat(),
+         "series_state": 100.0, "series_total": 5.0}
+    )
+    extra = api.HistoryData(
+        index_end={prev_month_day: 100.5},
+        curve_liters={
+            datetime(prev_month_day.year, prev_month_day.month, prev_month_day.day, h): 125.0
+            for h in (0, 6, 12, 18)
+        },
+        months=1, first_month=prev_month_day.replace(day=1), last_month=prev_month_day.replace(day=1),
+    )
+    # Nový měsíc zatím jen se stavem posledního odečtu, bez křivky.
+    data = _data()
+    data.daily_index_m3 = [api.DayValue(first_of_month, 100.7)]
+    data.curve_liters = []
+    data.last_reading = datetime(first_of_month.year, first_of_month.month, first_of_month.day, 5, 42)
+    with patch(f"{CLIENT}.async_fetch_history", return_value=extra) as fetch:
+        await _refresh(hass, entry, data)
+    assert fetch.call_count == 1
+    assert fetch.call_args.kwargs["only_months"] == [prev_month_day.replace(day=1)]
+    rows = await _stats(hass, STAT_ID)
+    assert rows and rows[-1]["sum"] == pytest.approx(5.5)    # navázáno na uložený součet
+    saved = await storage.Store(hass, 1, f"{DOMAIN}.history.{entry.entry_id}").async_load()
+    assert saved["series_day"] == first_of_month.isoformat()  # minulý měsíc je hotový
+
+
+async def test_long_outage_triggers_a_full_import_instead_of_catching_up(hass: HomeAssistant):
+    from custom_components.vhs_benesov.importer import MAX_CATCH_UP_MONTHS
+
+    entry = _entry_with_history(option=False)
+    entry.add_to_hass(hass)
+    with patch(f"{CLIENT}.async_fetch_all", return_value=_data()):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done(wait_background_tasks=True)
+    old = dt_util.now().date() - timedelta(days=31 * (MAX_CATCH_UP_MONTHS + 2))
+    await storage.Store(hass, 1, f"{DOMAIN}.history.{entry.entry_id}").async_save(
+        {"done": True, "written_to": 1.0, "series_day": old.isoformat(),
+         "series_state": 100.0, "series_total": 5.0}
+    )
+    with patch(f"{CLIENT}.async_fetch_history", return_value=_history()) as fetch:
+        await _refresh(hass, entry, _series_data(3, 2))
+    assert fetch.call_count == 1 and not fetch.call_args.kwargs.get("only_months")
+    assert len(await _stats(hass, STAT_ID)) == 9 * 24
+
+
+async def test_statistic_id_comes_from_the_meter_number():
+    from custom_components.vhs_benesov.importer import statistic_id_for
+
+    assert statistic_id_for("12345-XX-0000001", "abc") == "vhs_benesov:12345_xx_0000001_consumption"
+    assert statistic_id_for(None, "A1b2") == "vhs_benesov:a1b2_consumption"
+
+
+async def test_automatic_retry_after_a_failed_import_is_slow_not_hourly(hass: HomeAssistant):
+    entry = _entry_with_history()
+    entry.add_to_hass(hass)
+    with patch(f"{CLIENT}.async_fetch_all", return_value=_meter_data()), patch(
+        f"{CLIENT}.async_fetch_history", side_effect=api.VhsError("portál nejede")
+    ) as failing:
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done(wait_background_tasks=True)
+    assert failing.call_count == 1
+
+    async def refresh(delta, history):
+        with _at(delta), patch(f"{CLIENT}.async_fetch_all", return_value=_meter_data()), patch(
+            f"{CLIENT}.async_fetch_history", return_value=history, side_effect=None
+        ) as fetch:
+            await entry.runtime_data.async_refresh()
+            await hass.async_block_till_done(wait_background_tasks=True)
+            await async_wait_recording_done(hass)
+        return fetch.call_count
+
+    assert await refresh(timedelta(hours=1), _history()) == 0       # příliš brzy po chybě
+    assert await refresh(timedelta(hours=7), _history()) == 1       # po odpočinku se zkusí znovu
+    assert len(await _stats(hass, STAT_ID)) == 9 * 24

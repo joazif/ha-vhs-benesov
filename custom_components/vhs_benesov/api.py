@@ -678,7 +678,7 @@ class VhsBenesovClient:
 
         data.daily_liters = parse_day_series(daily)
         data.daily_liters = await self._with_week_start(data.daily_liters)
-        data.daily_index_m3 = parse_day_series(index)
+        data.daily_index_m3 = await self._with_index_fallback(parse_day_series(index), data)
         data.monthly_m3 = parse_month_series(monthly)
         data.curve_liters = await self._with_curve_context(parse_curve(curve), data)
         data.meter_id = data.meter_id or parse_meter_id(daily)
@@ -686,6 +686,31 @@ class VhsBenesovClient:
         if not data.daily_index_m3:
             raise ParseError("Ze stránky se stavem měřidla se nepodařilo přečíst data")
         return data
+
+    async def _with_index_fallback(
+        self, index: list[DayValue], data: MeterData
+    ) -> list[DayValue]:
+        """Když aktuální měsíc ještě nemá žádný stav, vzít poslední stavy z předchozího měsíce.
+
+        Nový měsíc se v řadě stavů objeví až po zveřejnění prvního odečtu (hodiny po půlnoci),
+        do té doby by bylo načtení dat chybou a senzory by byly nedostupné.
+        """
+        if index:
+            return index
+        # Měsíc posledního odečtu; bez něj měsíc před dneškem.
+        if data.last_reading:
+            month = data.last_reading.date().replace(day=1)
+        else:
+            month = (date.today().replace(day=1) - timedelta(days=1)).replace(day=1)
+        try:
+            body = await self.async_get(
+                f"{ENERGY_URL}?Affichage=IndexJour&IndexesSepares=True&PeriodeComplete=False"
+                f"&Annee={month.year}&Mois={month.month}"
+            )
+        except VhsError as err:
+            _LOGGER.debug("Stavy za %s se nestáhly: %s", month, err)
+            return index
+        return parse_day_series(body)
 
     async def _with_curve_context(
         self, curve: list[PointValue], data: MeterData
@@ -753,6 +778,7 @@ class VhsBenesovClient:
         delay: float = HISTORY_DELAY,
         backoff: float = HISTORY_BACKOFF,
         progress: Callable[[int, int], None] | None = None,
+        only_months: list[date] | None = None,
     ) -> HistoryData:
         """Stáhnout všechny měsíce, které portál nabízí (řádově desítky měsíců).
 
@@ -762,10 +788,14 @@ class VhsBenesovClient:
         jako robot v pravidelném rytmu. Když server odpoví 429 nebo 503,
         čeká se ``backoff`` sekund (nebo podle ``Retry-After``) a zkusí se to
         znovu. Selhání jednoho měsíce se zopakuje; když selže i potom, celé
-        stažení skončí chybou, aby se nezapsala historie s dírou.
+        stažení skončí chybou, aby se nezapsala historie s dírou. S ``only_months`` (první
+        dny měsíců) se stáhnou jen ty měsíce, například při doplnění dnů před aktuální měsíc.
         """
-        picker = await self.async_get(f"{ENERGY_URL}?Affichage=ConsoJour")
-        months = parse_month_options(picker)
+        if only_months:
+            months = sorted({m.replace(day=1) for m in only_months})
+        else:
+            picker = await self.async_get(f"{ENERGY_URL}?Affichage=ConsoJour")
+            months = parse_month_options(picker)
         if not months:
             raise ParseError("Portál nenabízí výběr měsíců, historii nelze stáhnout")
 

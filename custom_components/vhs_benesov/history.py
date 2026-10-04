@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta, tzinfo
 
 BUCKET_HOURS = (0, 6, 12, 18)
+BUCKET_STEP_HOURS = 6
 
 
 @dataclass(slots=True, frozen=True)
@@ -59,15 +60,12 @@ def build_hourly(
     index_end: Mapping[date, float],
     curve: Mapping[datetime, float],
     tz: tzinfo,
-    *,
-    before: datetime | None = None,
 ) -> list[HourRow]:
     """Hodinové řádky ze stavů měřidla a šestihodinové křivky.
 
     ``index_end`` je stav na konci dne (u posledního dne jen stav posledního
     odečtu), ``curve`` spotřeba v litrech s klíčem
-    v místním čase (naivní datetime, začátek kroku). ``before`` (UTC) odřízne
-    hodiny od tohoto okamžiku výš; tam už statistiky zapisuje HA samo.
+    v místním čase (naivní datetime, začátek kroku).
     Den bez použitelného stavu (chybí, měřidlo se vynulovalo) se přeskočí.
     """
     rows: list[HourRow] = []
@@ -123,8 +121,7 @@ def build_hourly(
             per_hour = total * (weight / weight_sum) / len(bucket)
             for hour in bucket:
                 state += per_hour
-                if before is None or hour < before:
-                    rows.append(HourRow(hour, state, per_hour))
+                rows.append(HourRow(hour, state, per_hour))
 
     rows.sort(key=lambda r: r.start)
     return _with_gap_increase(rows)
@@ -147,55 +144,89 @@ def _with_gap_increase(rows: list[HourRow]) -> list[HourRow]:
     return out
 
 
-# Rozdíl stavů, který se ještě bere jako shoda (plovoucí desetinná čárka).
-ANCHOR_TOLERANCE = 1e-6
+@dataclass(slots=True, frozen=True)
+class Checkpoint:
+    """Do kam je statistika hotová a už se nemění.
 
-
-def _up_to_anchor(rows: list[HourRow], anchor_reading: float) -> list[HourRow]:
-    """Odříznout řádky, jejichž stav je nad kotvou.
-
-    Kotva je stav senzoru v okamžiku, kdy začala živá data, a ten kvůli zpoždění
-    portálu (hodiny až půl dne) odpovídá starší době než konec historie. Historie
-    by pak skončila kladným součtem a živá data (začínají nulou) by ho "smazala"
-    záporným skokem. Zbytek spotřeby po kotvě doplní živá data.
+    Řádky před ``day`` jsou konečné. ``state`` je stav měřidla na konci předchozího dne (m³)
+    a ``total`` součet spotřeby (m³) od začátku statistiky do té doby; od nich se pokračuje,
+    aniž by se musela číst databáze.
     """
-    end = len(rows)
-    while end and rows[end - 1].state > anchor_reading + ANCHOR_TOLERANCE:
-        end -= 1
-    return rows[:end]
+
+    day: date
+    state: float
+    total: float
 
 
-def flat_rows(after: datetime, before: datetime, anchor_reading: float) -> list[dict]:
-    """Hodiny po konci historie až před živá data se stavem kotvy a nulovým součtem.
+@dataclass(slots=True)
+class SeriesUpdate:
+    """Hodinové řádky statistiky a nový kontrolní bod (původní, když nic nepřibylo)."""
 
-    Jimi se při opakovaném importu přepíšou řádky, které starší verze zapsala nad
-    kotvou (jinak by v databázi zůstaly s chybným součtem).
+    rows: list[dict]
+    checkpoint: Checkpoint | None
+
+
+def _local_midnight(day: date, tz: tzinfo) -> datetime:
+    return datetime(day.year, day.month, day.day, tzinfo=tz).astimezone(UTC)
+
+
+def series_update(
+    index_end: Mapping[date, float],
+    curve: Mapping[datetime, float],
+    tz: tzinfo,
+    checkpoint: Checkpoint | None = None,
+) -> SeriesUpdate:
+    """Hodinové řádky externí statistiky spotřeby (``state`` = stav měřidla, ``sum`` = součet).
+
+    Bez kontrolního bodu se řada postaví z celých dat od nuly. S ním se přepočítají jen dny
+    od ``checkpoint.day`` a součet naváže na ``checkpoint.total``. Zapsání týchž hodin znovu
+    je bezpečné (HA řádky se stejným začátkem přepíše), proto se neúplný poslední den
+    zapisuje a po dopočtu portálu se přepíše správnými hodnotami.
+
+    Kontrolní bod se posune za poslední den, který je v křivce celý (všechny čtyři kroky) a není
+    posledním dnem řady stavů (ten je jen odhad z posledního odečtu), takže už se nezmění.
     """
-    out: list[dict] = []
-    cur = after + timedelta(hours=1)
-    while cur < before:
-        out.append({"start": cur, "state": anchor_reading, "sum": 0.0})
-        cur += timedelta(hours=1)
-    return out
+    if not index_end:
+        return SeriesUpdate([], checkpoint)
+    index = dict(index_end)
+    if checkpoint is not None:
+        index = {d: v for d, v in index_end.items() if d >= checkpoint.day}
+        index[checkpoint.day - timedelta(days=1)] = checkpoint.state
+    hourly = build_hourly(index, curve, tz)
+    if checkpoint is not None:
+        cut = _local_midnight(checkpoint.day, tz)
+        hourly = [row for row in hourly if row.start >= cut]
 
+    # Poslední den řady je neúplný, dokud portál nezveřejní všechny kroky; hodiny po posledním
+    # známém kroku se nezapisují (nebyla by u nich pravda), doplní se po zveřejnění.
+    last_day = max(index_end)
+    known = [h for h in BUCKET_HOURS if datetime(last_day.year, last_day.month, last_day.day, h) in curve]
+    if known and len(known) < len(BUCKET_HOURS):
+        cutoff = datetime(last_day.year, last_day.month, last_day.day, max(known), tzinfo=tz)
+        cutoff = cutoff.astimezone(UTC) + timedelta(hours=BUCKET_STEP_HOURS)
+        hourly = [row for row in hourly if not (row.start.astimezone(tz).date() == last_day and row.start >= cutoff)]
 
-def to_statistics(rows: list[HourRow], anchor_reading: float) -> list[dict]:
-    """Řádky pro ``async_import_statistics`` se součtem ukotveným na konci.
+    total = checkpoint.total if checkpoint is not None else 0.0
+    rows: list[dict] = []
+    for row in hourly:
+        total += row.increase
+        rows.append({"start": row.start, "state": row.state, "sum": total})
 
-    HA u živých dat začíná součet nulou v okamžiku, kdy senzor poprvé zapíše
-    stav ``anchor_reading``. Historie proto musí končit součtem
-    ``poslední stav - anchor_reading`` (záporným nebo nulovým) a před ním se
-    odečítají přírůstky. Tak součet navazuje bez skoku. Řádky se stavem nad
-    kotvou se odříznou (viz ``_up_to_anchor``).
-    """
-    rows = _up_to_anchor(rows, anchor_reading)
-    if not rows:
-        return []
-    sums = [0.0] * len(rows)
-    sums[-1] = rows[-1].state - anchor_reading
-    for i in range(len(rows) - 2, -1, -1):
-        sums[i] = sums[i + 1] - rows[i + 1].increase
-    return [
-        {"start": row.start, "state": row.state, "sum": total}
-        for row, total in zip(rows, sums, strict=True)
-    ]
+    complete = {
+        at.date()
+        for at in curve
+        if all(datetime(at.year, at.month, at.day, h) in curve for h in BUCKET_HOURS)
+    }
+    first = checkpoint.day if checkpoint is not None else min(index_end)
+    final = [d for d in complete if first <= d < last_day and d in index_end]
+    if not final or not rows:
+        return SeriesUpdate(rows, checkpoint)
+    through = max(final)
+    until = _local_midnight(through + timedelta(days=1), tz)
+    done = [r for r in rows if r["start"] < until]
+    if not done:
+        return SeriesUpdate(rows, checkpoint)
+    return SeriesUpdate(
+        rows,
+        Checkpoint(through + timedelta(days=1), float(index_end[through]), done[-1]["sum"]),
+    )
