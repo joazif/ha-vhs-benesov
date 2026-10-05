@@ -1,5 +1,13 @@
 # Změny
 
+## Nevydáno
+
+### Opraveno
+- README: příklad karty ApexCharts s grafem letos proti loňsku čte statistiku spotřeby přes
+  `data_generator`; ApexCharts jinak vyžaduje entitu, kterou externí statistika nemá. Řady mají
+  `group_by`, bez něj tooltip nespáruje hodnotu „Loni“ s letošním bodem. Popisek s hodnotami je
+  nad grafem (datum, Letos a Loni s barevnými kolečky), upravený přes card-mod.
+
 ## 0.1.1
 
 ### Přidáno

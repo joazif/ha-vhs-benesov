@@ -236,10 +236,30 @@ stejné délky**, tedy s předchozím měsícem, ne se stejným měsícem loni. 
 **Letos proti loňsku po dnech:** základní karty Home Assistantu nedovedou zobrazit stejné období
 o rok dřív, proto je potřeba karta
 [ApexCharts Card](https://github.com/RomRider/apexcharts-card) (*HACS → Frontend → Stáhnout*,
-pak obnovit stránku). Řada *Loni* se posune o 365 dní a leží přes letošní.
+pak obnovit stránku). Řada *Loni* se posune o 365 dní a leží přes letošní. Popisek s hodnotami
+je nad grafem (datum a pod sebou Letos a Loni s barevnými kolečky); k úpravě rámečku slouží
+[card-mod](https://github.com/thomasloven/lovelace-card-mod), bez něj karta funguje, jen bude
+popisek širší.
+
+Statistika spotřeby je externí, nemá žádnou entitu, a ApexCharts jinak chce entitu. Proto se
+data čtou přes `data_generator` přímo z rekordéru a jako `entity` stačí dosadit libovolný
+existující senzor integrace (slouží jen kartě; hodnoty se berou ze statistiky, v litrech).
 
 ```yaml
 type: custom:apexcharts-card
+card_mod:
+  style: |
+    .apexcharts-xaxistooltip-text { min-width: 0 !important; }
+    .apexcharts-xaxistooltip { width: auto !important; }
+    .apexcharts-xaxistooltip:before,
+    .apexcharts-xaxistooltip:after {
+      bottom: auto !important;
+      top: 100% !important;
+      border-bottom-color: transparent !important;
+    }
+    .apexcharts-xaxistooltip:before { border-top-color: #90a4ae !important; }
+    .apexcharts-xaxistooltip:after { border-top-color: #1c1c1c !important; }
+    .apexcharts-tooltip { display: none !important; }
 header:
   show: true
   title: Spotřeba po dnech (poslední 2 měsíce vs. loni)
@@ -249,40 +269,79 @@ span:
 chart_type: line
 apex_config:
   chart:
-    height: 220
+    height: 320
+  grid:
+    padding:
+      top: 95
   legend:
     fontSize: 12px
+  tooltip:
+    enabled: true
+    custom: |
+      EVAL:function() { return ''; }
+  xaxis:
+    tooltip:
+      enabled: true
+      offsetY: -240
+      formatter: |
+        EVAL:function(val, opts) {
+          try {
+            const w = opts.w;
+            const i = opts.dataPointIndex;
+            const f = (x) => (x == null ? '-' : Math.round(x).toLocaleString('cs-CZ') + ' L');
+            const d = new Date(Number(val)).toLocaleDateString('cs-CZ');
+            return '<div style="text-align:left;line-height:1.6;white-space:nowrap">'
+              + d + '<br>'
+              + '<font color="#4fc3f7">&#9679;</font> Letos: <b>' + f(w.globals.series[0][i]) + '</b><br>'
+              + '<font color="#ff9800">&#9679;</font> Loni: <b>' + f(w.globals.series[1][i]) + '</b>'
+              + '</div>';
+          } catch (e) {
+            return val;
+          }
+        }
 series:
-  - entity: vhs_benesov:<měřidlo>_consumption
+  - entity: sensor.<měřidlo>_aktualni_stav_vodomeru
     name: Letos
     unit: L
-    transform: "return x * 1000;"
     type: area
     color: "#4fc3f7"
     stroke_width: 2
     opacity: 0.45
     curve: smooth
-    statistics:
-      type: change
-      period: day
-      align: start
+    data_generator: |
+      const id = 'vhs_benesov:<měřidlo>_consumption';
+      const res = await hass.callWS({
+        type: 'recorder/statistics_during_period',
+        start_time: start.toISOString(),
+        end_time: end.toISOString(),
+        statistic_ids: [id],
+        period: 'day',
+        types: ['change'],
+      });
+      return (res[id] || []).map((i) => [i.start, (i.change || 0) * 1000]);
     group_by:
       func: last
       duration: 1d
-  - entity: vhs_benesov:<měřidlo>_consumption
+  - entity: sensor.<měřidlo>_aktualni_stav_vodomeru
     name: Loni
     unit: L
-    transform: "return x * 1000;"
     type: line
     color: "#ff9800"
     stroke_width: 2
     stroke_dash: 3
     curve: smooth
     offset: -365d
-    statistics:
-      type: change
-      period: day
-      align: start
+    data_generator: |
+      const id = 'vhs_benesov:<měřidlo>_consumption';
+      const res = await hass.callWS({
+        type: 'recorder/statistics_during_period',
+        start_time: start.toISOString(),
+        end_time: end.toISOString(),
+        statistic_ids: [id],
+        period: 'day',
+        types: ['change'],
+      });
+      return (res[id] || []).map((i) => [i.start, (i.change || 0) * 1000]);
     group_by:
       func: last
       duration: 1d
