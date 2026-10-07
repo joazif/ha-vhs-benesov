@@ -240,6 +240,16 @@ class VhsSensor(VhsBenesovEntity, SensorEntity):
                 "stav_k_datu": data.index_day.isoformat() if data.index_day else None,
                 "stav_k_casu": data.last_reading.isoformat() if data.last_reading else None,
             }
+        if key == "last_reading":
+            importer = self.coordinator.history
+            seen = importer.reading_seen_at if importer else None
+            if seen is None or data.last_reading is None:
+                return None
+            reading = _last_reading(data)
+            return {
+                "zverejneno": dt_util.as_local(seen).isoformat(),
+                "zpozdeni_hodin": round((seen - reading).total_seconds() / 3600, 1),
+            }
         if key == "last_complete_day":
             found = latest_complete_day(data.curve_liters)
             return {"den": found[0].isoformat()} if found else None

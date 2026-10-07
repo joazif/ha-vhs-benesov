@@ -79,6 +79,7 @@ class FakePortal:
         self.retry_after: str | None = None
         self.logins = 0
         self.user_agents: set[str] = set()
+        self.redirect_loop = False            # stránka se přesměrovává sama na sebe
         self.empty_current_index = False      # nový měsíc bez prvního odečtu
         self.energy_requests = 0         # kolikrát si klient vyžádal stránky se spotřebou
 
@@ -133,6 +134,8 @@ class FakePortal:
         return web.Response(status=302, headers={"Location": "Site.aspx"})
 
     async def home(self, request):
+        if self.redirect_loop and self._authed(request):
+            return web.Response(status=302, headers={"Location": "Site.aspx"})
         return self._page(request, "home")
 
     async def energie(self, request):
@@ -229,6 +232,18 @@ async def test_new_month_without_a_reading_falls_back_to_the_previous_months_ind
     assert data.daily_index_m3, "stavy se mají vzít z měsíce posledního odečtu"
     assert max(d.day for d in data.daily_index_m3).month == data.last_reading.month
     assert data.index_m3 is not None
+
+
+async def test_redirect_loop_is_a_transient_error_not_a_login_error(portal):
+    """"Příliš mnoho přesměrování" nesmí vyvolat žádost o nové heslo."""
+    client, session = make_client()
+    await client.async_login()
+    portal.redirect_loop = True
+    with pytest.raises(api.VhsError) as caught:
+        await client.async_fetch_all()
+    await session.close()
+    assert not isinstance(caught.value, api.InvalidAuth)
+    assert "přesměrování" in str(caught.value)
 
 
 async def test_probe_reads_only_the_home_page(portal):

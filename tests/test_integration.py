@@ -1802,7 +1802,8 @@ async def test_month_turn_fetches_the_previous_month_once_to_finish_its_last_ste
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done(wait_background_tasks=True)
     # Kontrolní bod zůstal na posledním dni minulého měsíce.
-    await storage.Store(hass, 1, f"{DOMAIN}.history.{entry.entry_id}").async_save(
+    # Přes úložiště importéru (jiná instance by měla vlastní mezipaměť).
+    await entry.runtime_data.history._store.async_save(
         {"done": True, "written_to": 1.0, "series_day": prev_month_day.isoformat(),
          "series_state": 100.0, "series_total": 5.0}
     )
@@ -1838,7 +1839,8 @@ async def test_long_outage_triggers_a_full_import_instead_of_catching_up(hass: H
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done(wait_background_tasks=True)
     old = dt_util.now().date() - timedelta(days=31 * (MAX_CATCH_UP_MONTHS + 2))
-    await storage.Store(hass, 1, f"{DOMAIN}.history.{entry.entry_id}").async_save(
+    # Přes úložiště importéru (jiná instance by měla vlastní mezipaměť).
+    await entry.runtime_data.history._store.async_save(
         {"done": True, "written_to": 1.0, "series_day": old.isoformat(),
          "series_state": 100.0, "series_total": 5.0}
     )
@@ -1877,3 +1879,50 @@ async def test_automatic_retry_after_a_failed_import_is_slow_not_hourly(hass: Ho
     assert await refresh(timedelta(hours=1), _history()) == 0       # příliš brzy po chybě
     assert await refresh(timedelta(hours=7), _history()) == 1       # po odpočinku se zkusí znovu
     assert len(await _stats(hass, STAT_ID)) == 9 * 24
+
+
+async def test_reading_shows_when_the_integration_first_saw_it(hass: HomeAssistant):
+    entry = _entry_with_history(option=False)
+    entry.add_to_hass(hass)
+    first = _series_data(6, 5)
+    with patch(f"{CLIENT}.async_fetch_all", return_value=first):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done(wait_background_tasks=True)
+    entity_id = er.async_get(hass).async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_last_reading"
+    )
+    # První odečet po spuštění: kdy se objevil na portálu, se neví.
+    assert "zverejneno" not in hass.states.get(entity_id).attributes
+
+    newer = _series_data(7, 6, start_offset=-1)               # další odečet, o den později
+    newer.last_reading = first.last_reading + timedelta(hours=12)
+    await _refresh(hass, entry, newer)
+    attrs = hass.states.get(entity_id).attributes
+    seen = datetime.fromisoformat(attrs["zverejneno"])
+    assert abs(seen - dt_util.now()) < timedelta(minutes=5)
+    reading = newer.last_reading.replace(tzinfo=dt_util.get_default_time_zone())
+    assert attrs["zpozdeni_hodin"] == pytest.approx((seen - reading).total_seconds() / 3600, abs=0.1)
+
+    # Po restartu integrace údaj zůstane.
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    with patch(f"{CLIENT}.async_fetch_all", return_value=newer):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done(wait_background_tasks=True)
+    assert hass.states.get(entity_id).attributes["zverejneno"] == attrs["zverejneno"]
+
+
+async def test_redirect_loop_error_is_retried_not_reauth(hass: HomeAssistant):
+    entry = _entry()
+    entry.add_to_hass(hass)
+    with patch(f"{CLIENT}.async_fetch_all", return_value=_data()):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    coordinator = entry.runtime_data
+    with patch(f"{CLIENT}.async_fetch_all", side_effect=api.VhsError("Příliš mnoho přesměrování u Accueil.aspx")):
+        for _ in range(5):
+            await coordinator.async_refresh()
+        await hass.async_block_till_done()
+    assert not coordinator.last_update_success
+    assert not any(
+        f["context"]["source"] == SOURCE_REAUTH for f in hass.config_entries.flow.async_progress()
+    )

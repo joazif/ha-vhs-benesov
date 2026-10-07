@@ -276,3 +276,47 @@ def test_dst_change_day_with_25_hours_adds_up():
     assert update.rows[-1]["sum"] == pytest.approx(0.5)
     sums = [r["sum"] for r in day_rows]
     assert sums == sorted(sums)
+
+
+def test_several_new_days_at_once_and_a_skipped_reading_give_the_same_rows_as_a_full_rebuild():
+    """Portál zveřejní najednou víc dní (křivka skočí o 4 kroky i víc) a jeden den chybí."""
+    idx_a, cv_a = _data(last_day=4, complete_through=3)
+    first = history.series_update(idx_a, cv_a, PRAGUE)
+
+    idx_b, cv_b = _data(last_day=9, complete_through=8)
+    del idx_b[BASE + timedelta(days=5)]                      # přeskočený odečet za jeden den
+    second = history.series_update(idx_b, cv_b, PRAGUE, first.checkpoint)
+    full = history.series_update(idx_b, cv_b, PRAGUE)
+
+    cut = _midnight(first.checkpoint.day)
+    expected = [r for r in full.rows if r["start"] >= cut]
+    assert [r["start"] for r in second.rows] == [r["start"] for r in expected]
+    for got, want in zip(second.rows, expected, strict=True):
+        assert got["sum"] == pytest.approx(want["sum"])
+    sums = [r["sum"] for r in first.rows if r["start"] < cut] + [r["sum"] for r in second.rows]
+    assert sums == sorted(sums)                              # součet nikdy neklesne
+    assert second.rows[-1]["sum"] == pytest.approx(0.5 * 8, abs=1e-9)   # nic se neztratí
+
+
+def test_incremental_update_across_the_winter_time_change_equals_full_rebuild():
+    first_day = date(2026, 10, 23)
+    n = 5                                                    # 23.-27. 10., 25. 10. má 25 hodin
+    index = {first_day + timedelta(days=i): 100.0 + 0.5 * (i + 1) for i in range(n)}
+    cv = {}
+    for i in range(n - 1):
+        cv.update(curve(first_day + timedelta(days=i), [125, 125, 125, 125]))
+    full = history.series_update(index, cv, PRAGUE)
+    day = full.checkpoint.day
+    # Starší průchod skončil před přechodem času a pokračuje se až po něm.
+    early_index = {d: v for d, v in index.items() if d <= first_day + timedelta(days=1)}
+    early_curve = {at: v for at, v in cv.items() if at.date() <= first_day}
+    early = history.series_update(early_index, early_curve, PRAGUE)
+    later = history.series_update(index, cv, PRAGUE, early.checkpoint)
+    cut = _midnight(early.checkpoint.day)
+    expected = [r for r in full.rows if r["start"] >= cut]
+    assert len(later.rows) == len(expected)
+    for got, want in zip(later.rows, expected, strict=True):
+        assert got["start"] == want["start"] and got["sum"] == pytest.approx(want["sum"])
+    assert day == first_day + timedelta(days=n - 1)
+    transition = [r for r in later.rows if r["start"].astimezone(PRAGUE).date() == date(2026, 10, 25)]
+    assert len(transition) == 25

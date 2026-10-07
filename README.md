@@ -78,7 +78,7 @@ zvolil (výchozí litry, viz Jednotky); atributy s `_m3` v názvu jsou vždy v m
 | Senzor | Stav | Atributy |
 |---|---|---|
 | Aktuální stav vodoměru | `912 027 l` (`912,027 m³`) | `stav_k_datu`, `stav_k_casu` |
-| Poslední odečet | datum a čas | — |
+| Poslední odečet | datum a čas | `zverejneno`, `zpozdeni_hodin` |
 | Spotřeba poslední úplný den | `875 l` | `den` |
 | Spotřeba tento týden | `1 581 l` | — |
 | Spotřeba v tomto měsíci | `20 751 l` | — |
@@ -86,6 +86,9 @@ zvolil (výchozí litry, viz Jednotky); atributy s `_m3` v názvu jsou vždy v m
 | Změna oproti loňsku v objemu | `27 000 l` (`27 m³`) | `obdobi`, `spotreba_m3`, `loni_m3`, `zmena_procent` |
 | Změna oproti loňsku za období | `6–8/2026 vs 6–8/2025` | — |
 
+- **Poslední odečet** má atributy `zverejneno` (kdy integrace nový odečet poprvé uviděla) a
+  `zpozdeni_hodin` (o kolik později, než byl odečten). Ukazují, jaké zpoždění portál zrovna má.
+  Poprvé po instalaci se čas zveřejnění neví a atributy se objeví až u dalšího odečtu.
 - **Aktuální stav vodoměru** je stav z číselníku na hlavní stránce portálu, tedy stejné číslo
   jako u *Poslední odečet*. Je to jen ukazatel aktuálního stavu bez `state_class`, takže
   si Home Assistant k němu nevede vlastní dlouhodobou statistiku. Ta by byla kvůli zpoždění
@@ -134,6 +137,14 @@ dne. Nová data přibývají po dávkách, ne průběžně.
 se celé stažení udělá nejméně jednou denně i bez změny, a kdykoli tlačítkem *Aktualizovat*.
 Interval se proto nenastavuje. *Poslední kontrola portálu* je čas posledního kontaktu s
 portálem, kdy se naposled stáhla všechna data je v atributu `posledni_stazeni_dat`.
+
+**Chyby přihlášení:** Portál občas krátkodobě odmítne přihlášení, i když je heslo správné (v
+měření se to opakovalo denně ve stejných hodinách a další pokus za pár minut prošel). Integrace
+proto o nové heslo požádá až po třech odmítnutích po sobě; jednotlivá odmítnutí jen zapíše do logu
+jako varování. Hláška „Příliš mnoho přesměrování“ je brána jako dočasná chyba, ne jako špatné
+heslo. Pokud se současně přihlašuješ k portálu i jiným nástrojem (např. `tools/watch_updates.py`)
+pod stejným účtem, mohou se relace navzájem vyhazovat; dá se to jen předpokládat, z kódu to
+ověřit nejde.
 
 *Aktuální stav vodoměru* proto může být o toto zpoždění pozadu za skutečným
 vodoměrem; kdy byl stav odečten, říká *Poslední odečet*. Navíc se zveřejňují jen dokončené

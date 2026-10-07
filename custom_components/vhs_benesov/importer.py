@@ -125,6 +125,10 @@ class HistoryImporter:
             hass, STORE_VERSION, f"{DOMAIN}.history.{entry_id}"
         )
         self._signature: tuple | None = None
+        # Kdy integrace poprvé uviděla poslední odečet; z rozdílu proti času odečtu je vidět, jak
+        # velké zpoždění portál zrovna má. None, dokud se změna odečtu nepozorovala.
+        self.reading_seen_at: datetime | None = None
+        self._seen_reading: datetime | None = None
         self.status = HistoryStatus()
 
     @property
@@ -139,6 +143,7 @@ class HistoryImporter:
     async def async_restore(self) -> None:
         """Po restartu HA ukázat, že historie už je stažená (stav není v paměti)."""
         data = await self._store.async_load() or {}
+        self._restore_seen_reading(data)
         if data.get("done") and _checkpoint_from(data) is not None:
             # Starší záznam čas dokončení nemá; nejblíž je začátek posledního běhu.
             finished = self._format_time(data.get("finished") or data.get("last_run"))
@@ -150,6 +155,30 @@ class HistoryImporter:
                 finished=finished,
                 written_to=self._format_time(data.get("written_to")),
             )
+
+    def _restore_seen_reading(self, data: dict[str, Any]) -> None:
+        try:
+            self._seen_reading = datetime.fromisoformat(data["seen_reading"])
+        except (KeyError, TypeError, ValueError):
+            self._seen_reading = None
+        seen_at = data.get("seen_at")
+        self.reading_seen_at = datetime.fromtimestamp(seen_at, UTC) if seen_at else None
+
+    async def _track_reading(self, data: MeterData) -> None:
+        """Zapamatovat, kdy integrace poprvé uviděla nový odečet (první odečet nemá čas znám)."""
+        reading = data.last_reading
+        if reading is None or reading == self._seen_reading:
+            return
+        previous = self._seen_reading
+        self._seen_reading = reading
+        self.reading_seen_at = self._now() if previous is not None else None
+        await self._merge_save(
+            {
+                "seen_reading": reading.isoformat(),
+                "seen_at": self.reading_seen_at.timestamp() if self.reading_seen_at else None,
+            }
+        )
+        self._coordinator.async_update_listeners()
 
     async def async_remove_store(self) -> None:
         await self._store.async_remove()
@@ -309,6 +338,10 @@ class HistoryImporter:
 
         Data se předávají výslovně: úkol se spouští dřív, než je koordinátor uloží do ``data``.
         """
+        try:
+            await self._track_reading(data)
+        except Exception:  # noqa: BLE001 - pomocný údaj nesmí zastavit doplňování statistiky
+            _LOGGER.exception("Zápis času zveřejnění odečtu selhal")
         if self.running:
             return
         try:

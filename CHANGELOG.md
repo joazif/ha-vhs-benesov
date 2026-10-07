@@ -1,12 +1,19 @@
 # Změny
 
-## Nevydáno
+## 0.1.2
+
+### Přidáno
+- Atributy `zverejneno` a `zpozdeni_hodin` u senzoru *Poslední odečet*: kdy integrace nový odečet
+  poprvé uviděla a o kolik hodin později, než byl odečten (zpoždění portálu).
 
 ### Opraveno
 - README: příklad karty ApexCharts s grafem letos proti loňsku čte statistiku spotřeby přes
   `data_generator`; ApexCharts jinak vyžaduje entitu, kterou externí statistika nemá. Řady mají
   `group_by`, bez něj tooltip nespáruje hodnotu „Loni“ s letošním bodem. Popisek s hodnotami je
   nad grafem (datum, Letos a Loni s barevnými kolečky), upravený přes card-mod.
+- README: popis občasného odmítnutí přihlášení portálem. Testy hlídají, že „Příliš mnoho
+  přesměrování“ je dočasná chyba (ne žádost o nové heslo), a že statistika správně zvládne víc
+  dní najednou, přeskočený odečet a přechod na zimní čas.
 
 ## 0.1.1
 
