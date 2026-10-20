@@ -36,9 +36,11 @@
 
 [![Otevřít repozitář v HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=joazif&repository=ha-vhs-benesov&category=integration)
 
-1. HACS → ⋮ → **Custom repositories** → `https://github.com/joazif/ha-vhs-benesov`, kategorie **Integration**
-2. Najdi *VHS Benešov*, klikni **Download** a restartuj Home Assistant
-3. **Nastavení → Zařízení a služby → Přidat integraci → VHS Benešov**
+1. V HACS vyhledej **VHS Benešov**, klikni **Download** a restartuj Home Assistant
+2. **Nastavení → Zařízení a služby → Přidat integraci → VHS Benešov**
+
+Kdyby ji HACS ve vyhledávání ještě nenabídl: HACS → ⋮ → **Custom repositories** →
+`https://github.com/joazif/ha-vhs-benesov`, kategorie **Integration**, a pokračuj stejně.
 
 [![Přidat integraci](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=vhs_benesov)
 

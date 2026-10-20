@@ -1,5 +1,11 @@
 # Změny
 
+## Nevydáno
+
+### Změněno
+- README: instalace začíná vyhledáním v HACS (integrace je v seznamu HACS), přidání vlastního
+  repozitáře zůstává jako záložní postup.
+
 ## 0.1.2
 
 ### Přidáno
