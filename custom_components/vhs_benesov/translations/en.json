@@ -94,6 +94,9 @@
       },
       "compare_period": {
         "name": "Change vs last year period"
+      },
+      "compare_summary": {
+        "name": "Comparison with last year"
       }
     },
     "button": {

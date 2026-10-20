@@ -94,6 +94,9 @@
       },
       "compare_period": {
         "name": "Změna oproti loňsku za období"
+      },
+      "compare_summary": {
+        "name": "Srovnání s loňskem"
       }
     },
     "button": {

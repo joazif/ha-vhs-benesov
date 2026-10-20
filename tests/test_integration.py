@@ -1010,7 +1010,7 @@ def test_sensor_names_sort_alphabetically_into_a_logical_order():
     )["entity"]["sensor"]
     main = [
         "meter_index", "last_reading", "last_complete_day",
-        "consumption_week", "consumption_month", "change_vs_last_year",
+        "consumption_week", "consumption_month", "compare_summary", "change_vs_last_year",
         "change_vs_last_year_m3", "compare_period",
     ]
     names = [sensors[k]["name"] for k in main]
@@ -2000,3 +2000,33 @@ async def test_new_entries_start_at_the_current_minor_version(hass: HomeAssistan
         await hass.async_block_till_done()
     entry = hass.config_entries.async_get_entry(result["result"].entry_id)
     assert entry.minor_version == 2 and "scan_interval_hours" not in entry.options
+
+
+def test_comparison_summary_reads_as_a_sentence_with_sign_and_units():
+    from custom_components.vhs_benesov import sensor
+
+    def result(now, then):
+        return {"change_percent": (now / then - 1) * 100, "now_m3": now, "then_m3": then,
+                "from": date(2026, 7, 1), "to": date(2026, 9, 1)}
+
+    data = api.MeterData()
+    with patch.object(sensor, "_year_over_year", return_value=result(66.002, 46.467)):
+        assert sensor._compare_summary(data, 3, "l") == "o 42 % víc (+19 535 l)"
+        assert sensor._compare_summary(data, 3, "m3") == "o 42 % víc (+19,5 m³)"
+    with patch.object(sensor, "_year_over_year", return_value=result(30.874, 35.084)):
+        assert sensor._compare_summary(data, 3, "l") == "o 12 % méně (−4 210 l)"
+    with patch.object(sensor, "_year_over_year", return_value=result(40.1, 40.0)):
+        assert sensor._compare_summary(data, 3, "l") == "stejně jako loni (+100 l)"
+    with patch.object(sensor, "_year_over_year", return_value=None):
+        assert sensor._compare_summary(data, 3, "l") is None
+
+
+async def test_comparison_summary_sensor_follows_the_unit_option(hass: HomeAssistant):
+    monthly = _monthly_back_from_today(this_year=15.0, last_year=10.0)
+    entry, _ = await _setup_with_monthly(hass, monthly)
+    registry = er.async_get(hass)
+    entity_id = registry.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_compare_summary")
+    state = hass.states.get(entity_id)
+    assert registry.async_get(entity_id).entity_category is None      # mezi Senzory
+    assert state.state == "o 50 % víc (+15,0 m³)"                     # testy počítají v m³
+    assert state.attributes["obdobi"] == _expected_period(3)

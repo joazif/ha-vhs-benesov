@@ -1,5 +1,12 @@
 # Změny
 
+## 0.1.5
+
+### Přidáno
+- Senzor **Srovnání s loňskem**: totéž co oba senzory změny jednou větou se znaménkem, např.
+  `o 42 % víc (+19 535 l)` nebo `o 12 % méně (−4 210 l)`. Objem je v jednotce z nastavení
+  (litry nebo m³), období srovnání je v atributu `obdobi`.
+
 ## 0.1.4
 
 ### Změněno

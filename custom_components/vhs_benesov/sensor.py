@@ -27,7 +27,7 @@ from .api import (
     latest_complete_day,
     year_over_year,
 )
-from .const import CONF_COMPARE_MONTHS, DEFAULT_COMPARE_MONTHS
+from .const import CONF_COMPARE_MONTHS, CONF_UNITS, DEFAULT_COMPARE_MONTHS, DEFAULT_UNITS
 from .coordinator import CHECK_INTERVAL, VhsBenesovCoordinator
 from .entity import VhsBenesovEntity
 
@@ -69,6 +69,29 @@ def _change_m3(data: MeterData, months: int) -> float | None:
     return round(result["now_m3"] - result["then_m3"], 3) if result else None
 
 
+def _volume_text(m3: float, units: str) -> str:
+    """Rozdíl objemu se znaménkem: "+19 535 l", "−4 210 l" (litry) nebo "+19,5 m³"."""
+    sign = "+" if m3 > 0 else "−" if m3 < 0 else ""
+    if units == "m3":
+        number = f"{abs(m3):.1f}".replace(".", ",")
+        return f"{sign}{number} m³"
+    litres = f"{round(abs(m3) * 1000):,}".replace(",", " ")
+    return f"{sign}{litres} l"
+
+
+def _compare_summary(data: MeterData, months: int, units: str) -> str | None:
+    """Srovnání s loňskem jednou větou: "o 42 % víc (+19 535 l)" / "o 12 % méně (−4 210 l)"."""
+    result = _year_over_year(data, months)
+    if not result:
+        return None
+    percent = round(result["change_percent"])
+    diff = result["now_m3"] - result["then_m3"]
+    if percent == 0:
+        return f"stejně jako loni ({_volume_text(diff, units)})"
+    word = "víc" if percent > 0 else "méně"
+    return f"o {abs(percent)} % {word} ({_volume_text(diff, units)})"
+
+
 def _this_week_m3(data: MeterData) -> float | None:
     """Spotřeba od pondělí do dneška v m³ (z denních hodnot v litrech)."""
     today = _today()
@@ -107,6 +130,8 @@ class VhsSensorDescription(SensorEntityDescription):
     value_fn: Callable[..., Any]
     # Senzory srovnání s loňskem berou navíc počet měsíců z nastavení.
     uses_compare_months: bool = False
+    # Text s objemem bere i jednotku z nastavení (litry nebo m³).
+    uses_units: bool = False
 
 
 SENSORS: tuple[VhsSensorDescription, ...] = (
@@ -143,6 +168,14 @@ SENSORS: tuple[VhsSensorDescription, ...] = (
         icon="mdi:calendar-range",
         value_fn=_compare_period,
         uses_compare_months=True,
+    ),
+    VhsSensorDescription(
+        key="compare_summary",
+        translation_key="compare_summary",
+        icon="mdi:compare-horizontal",
+        value_fn=_compare_summary,
+        uses_compare_months=True,
+        uses_units=True,
     ),
     VhsSensorDescription(
         key="consumption_week",
@@ -226,7 +259,16 @@ class VhsSensor(VhsBenesovEntity, SensorEntity):
         return int(options.get(CONF_COMPARE_MONTHS, DEFAULT_COMPARE_MONTHS))
 
     @property
+    def _units(self) -> str:
+        options = self.coordinator.config_entry.options
+        return str(options.get(CONF_UNITS, DEFAULT_UNITS)).lower()
+
+    @property
     def native_value(self) -> Any:
+        if self.entity_description.uses_units:
+            return self.entity_description.value_fn(
+                self.coordinator.data, self._compare_months, self._units
+            )
         if self.entity_description.uses_compare_months:
             return self.entity_description.value_fn(self.coordinator.data, self._compare_months)
         return self.entity_description.value_fn(self.coordinator.data)
@@ -253,6 +295,9 @@ class VhsSensor(VhsBenesovEntity, SensorEntity):
         if key == "last_complete_day":
             found = latest_complete_day(data.curve_liters)
             return {"den": found[0].isoformat()} if found else None
+        if key == "compare_summary":
+            result = _year_over_year(data, self._compare_months)
+            return {"obdobi": format_period(result)} if result else None
         if key in ("change_vs_last_year", "change_vs_last_year_m3"):
             result = _year_over_year(data, self._compare_months)
             if not result:
