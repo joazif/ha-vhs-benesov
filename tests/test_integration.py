@@ -1496,12 +1496,14 @@ def _expected_period(months: int) -> str:
 
     (y1, m1), (y2, m2) = back(months), back(1)
     def span(ya, ma, yb, mb):
+        ya, yb = f"{ya % 100:02d}", f"{yb % 100:02d}"
         if (ya, ma) == (yb, mb):
             return f"{ma}/{ya}"
         if ya == yb:
             return f"{ma}–{mb}/{ya}"
         return f"{ma}/{ya}–{mb}/{yb}"
-    return f"{span(y1, m1, y2, m2)} vs {span(y1 - 1, m1, y2 - 1, m2)}"
+    # Loni proti letošku, rok dvoumístně: "7–9/25 vs 7–9/26".
+    return f"{span(y1 - 1, m1, y2 - 1, m2)} vs {span(y1, m1, y2, m2)}"
 
 
 async def _period_state(hass, entry):
@@ -1968,3 +1970,33 @@ async def test_statistic_is_not_written_at_all_when_the_meter_number_was_never_k
     entry_based = "vhs_benesov:" + entry.entry_id.lower() + "_consumption"
     assert await _stats(hass, entry_based) == []
     assert await _stats(hass, STAT_ID) == []
+
+
+async def test_old_scan_interval_option_is_removed_once(hass: HomeAssistant):
+    entry = MockConfigEntry(
+        domain=DOMAIN, unique_id="0000000000", version=1, minor_version=1,
+        data={CONF_USERNAME: "0000000000", CONF_PASSWORD: "heslo"},
+        options={"scan_interval_hours": 3, CONF_UNITS: "m3", CONF_COMPARE_MONTHS: 6},
+    )
+    entry.add_to_hass(hass)
+    with patch(f"{CLIENT}.async_fetch_all", return_value=_data()):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED
+    assert entry.minor_version == 2
+    assert "scan_interval_hours" not in entry.options
+    assert entry.options[CONF_UNITS] == "m3" and entry.options[CONF_COMPARE_MONTHS] == 6   # zbytek zůstal
+
+
+async def test_new_entries_start_at_the_current_minor_version(hass: HomeAssistant):
+    with patch(f"{CLIENT}.async_validate", return_value="12345-XX-0000001"), patch(
+        f"{CLIENT}.async_fetch_all", return_value=_data()
+    ):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_USERNAME: "0000000000", CONF_PASSWORD: "heslo", CONF_IMPORT_HISTORY: False},
+        )
+        await hass.async_block_till_done()
+    entry = hass.config_entries.async_get_entry(result["result"].entry_id)
+    assert entry.minor_version == 2 and "scan_interval_hours" not in entry.options

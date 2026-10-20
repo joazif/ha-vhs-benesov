@@ -457,19 +457,22 @@ def year_over_year(
 
 
 def format_period(result: dict) -> str:
-    """Období srovnání čitelně, např. "6–8/2026 vs 6–8/2025" (letos proti loňsku)."""
+    """Období srovnání krátce, loni proti letošku, např. "6–8/25 vs 6–8/26".
+
+    Rok je dvoumístný, aby se text vešel do řádku karty; přes Nový rok "11/24–1/25 vs 11/25–1/26".
+    """
 
     def span(first: date, last: date) -> str:
         if first == last:
-            return f"{first.month}/{first.year}"
+            return f"{first.month}/{first.year % 100:02d}"
         if first.year == last.year:
-            return f"{first.month}–{last.month}/{first.year}"
-        return f"{first.month}/{first.year}–{last.month}/{last.year}"
+            return f"{first.month}–{last.month}/{first.year % 100:02d}"
+        return f"{first.month}/{first.year % 100:02d}–{last.month}/{last.year % 100:02d}"
 
     first, last = result["from"], result["to"]
     prev_first = first.replace(year=first.year - 1)
     prev_last = last.replace(year=last.year - 1)
-    return f"{span(first, last)} vs {span(prev_first, prev_last)}"
+    return f"{span(prev_first, prev_last)} vs {span(first, last)}"
 
 
 # --------------------------------------------------------------------------

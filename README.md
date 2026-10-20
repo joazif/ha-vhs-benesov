@@ -86,7 +86,7 @@ zvolil (výchozí litry, viz Jednotky); atributy s `_m3` v názvu jsou vždy v m
 | Spotřeba v tomto měsíci | `20 751 l` | — |
 | Změna oproti loňsku v % | `68 %` | `obdobi`, `spotreba_m3`, `loni_m3`, `rozdil_m3` |
 | Změna oproti loňsku v objemu | `27 000 l` (`27 m³`) | `obdobi`, `spotreba_m3`, `loni_m3`, `zmena_procent` |
-| Změna oproti loňsku za období | `6–8/2026 vs 6–8/2025` | — |
+| Změna oproti loňsku za období | `6–8/25 vs 6–8/26` | — |
 
 - **Poslední odečet** má atributy `zverejneno` (kdy integrace nový odečet poprvé uviděla) a
   `zpozdeni_hodin` (o kolik později, než byl odečten). Ukazují, jaké zpoždění portál zrovna má.
@@ -101,7 +101,7 @@ zvolil (výchozí litry, viz Jednotky); atributy s `_m3` v názvu jsou vždy v m
 - **Spotřeba tento týden** se počítá od pondělí do posledního dne, který portál zná, včetně
   neúplného, takže do dalšího odečtu ještě roste.
 - **Změna oproti loňsku** srovnává poslední tři úplné měsíce se stejnými třemi o rok dřív
-  (např. 6–8/2026 proti 6–8/2025; které měsíce to jsou, ukazuje *Změna oproti loňsku za období*); měsíc posledního odečtu je neúplný a nepočítá se. Kladné
+  (např. 6–8/2026 proti 6–8/2025; které měsíce to jsou, ukazuje *Změna oproti loňsku za období* ve tvaru `6–8/25 vs 6–8/26`, loni proti letošku); měsíc posledního odečtu je neúplný a nepočítá se. Kladné
   číslo je růst, záporné pokles. Bez dat za loňský rok je stav `unknown`. Počet měsíců (1, 3
   nebo 6) jde změnit v nastavení; 12 nejde, portál nabízí jen 24 měsíců.
 - Čas z portálu je místní. *Poslední odečet* je časové razítko, jeho tvar určuje tvůj profil.

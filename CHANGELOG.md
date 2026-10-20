@@ -1,5 +1,15 @@
 # Změny
 
+## 0.1.4
+
+### Změněno
+- *Změna oproti loňsku za období* je kratší a čte se v pořadí loni → letos, s dvoumístným
+  rokem: `7–9/25 vs 7–9/26` (dřív `7–9/2026 vs 7–9/2025`), aby se vešla do řádku karty.
+
+### Opraveno
+- Z uloženého nastavení starších instalací se jednorázově smaže zrušená volba intervalu
+  stahování (`scan_interval_hours`); integrace ji od 0.1.0 nepoužívá.
+
 ## 0.1.3
 
 ### Opraveno

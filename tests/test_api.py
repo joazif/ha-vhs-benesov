@@ -631,13 +631,13 @@ def test_format_period_single_month_same_year_and_across_new_year():
     def period(first, last):
         return {"from": first, "to": last}
 
-    assert api.format_period(period(date(2026, 8, 1), date(2026, 8, 1))) == "8/2026 vs 8/2025"
-    assert api.format_period(period(date(2026, 6, 1), date(2026, 8, 1))) == "6–8/2026 vs 6–8/2025"
-    assert api.format_period(period(date(2025, 11, 1), date(2026, 1, 1))) == "11/2025–1/2026 vs 11/2024–1/2025"
+    assert api.format_period(period(date(2026, 8, 1), date(2026, 8, 1))) == "8/25 vs 8/26"
+    assert api.format_period(period(date(2026, 6, 1), date(2026, 8, 1))) == "6–8/25 vs 6–8/26"
+    assert api.format_period(period(date(2025, 11, 1), date(2026, 1, 1))) == "11/24–1/25 vs 11/25–1/26"
     # Sedí na skutečný výsledek srovnání.
     monthly = _months((2024, 10), [10] * 12 + [15] * 12)
     result = api.year_over_year(monthly, date(2026, 9, 29), months=3)
-    assert api.format_period(result) == "6–8/2026 vs 6–8/2025"
+    assert api.format_period(result) == "6–8/25 vs 6–8/26"
 
 
 def test_parse_retry_after():

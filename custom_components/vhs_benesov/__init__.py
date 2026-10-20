@@ -155,6 +155,22 @@ def _migrate_unique_id(
     hass.config_entries.async_update_entry(entry, unique_id=meter_id)
 
 
+# Volby, které už integrace nemá; při migraci se z uloženého nastavení odstraní.
+RETIRED_OPTIONS = ("scan_interval_hours",)
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: VhsBenesovConfigEntry) -> bool:
+    """Jednorázové úpravy uloženého nastavení starších instalací.
+
+    1.1 -> 1.2: interval stahování se už nevolí (kontroluje se každou hodinu), jeho uložená
+    hodnota se smaže.
+    """
+    if entry.version == 1 and entry.minor_version < 2:
+        options = {k: v for k, v in entry.options.items() if k not in RETIRED_OPTIONS}
+        hass.config_entries.async_update_entry(entry, options=options, minor_version=2)
+    return True
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: VhsBenesovConfigEntry) -> bool:
     """Odpojit integraci."""
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

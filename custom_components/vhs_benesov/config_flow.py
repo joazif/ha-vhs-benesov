@@ -76,6 +76,8 @@ class VhsBenesovConfigFlow(ConfigFlow, domain=DOMAIN):
     """Přihlášení k portálu."""
 
     VERSION = 1
+    # 1.2: z voleb zmizel interval stahování (viz async_migrate_entry).
+    MINOR_VERSION = 2
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
