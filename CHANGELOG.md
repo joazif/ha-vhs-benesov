@@ -1,6 +1,15 @@
 # Změny
 
-## Nevydáno
+## 0.1.3
+
+### Opraveno
+- ID statistiky spotřeby se po prvním určení uloží a nemění se, i kdyby portál jednou nevrátil
+  číslo měřidla (dřív by se zapisovalo do druhé statistiky a součty by se rozdvojily). Bez čísla
+  měřidla se statistika zatím nezapisuje.
+- Import celé historie a doplňování statistiky se nemohou překrývat (mají společný zámek).
+- Když se úvodní stránka portálu nedá přečíst (změna webu), celé stažení se dělá nejvýš jednou za
+  6 hodin, ne při každé hodinové kontrole.
+- Nesmyslné datum nebo čas na stránce portálu už neshodí načtení dat.
 
 ### Změněno
 - README: instalace začíná vyhledáním v HACS (integrace je v seznamu HACS), přidání vlastního

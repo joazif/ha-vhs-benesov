@@ -238,7 +238,10 @@ def parse_last_reading(body: str) -> datetime | None:
     if not match:
         return None
     day, month, year, hour, minute = (int(g) for g in match.groups())
-    return datetime(year, month, day, hour, minute)
+    try:
+        return datetime(year, month, day, hour, minute)
+    except ValueError:                       # nesmyslné datum na stránce není důvod k chybě
+        return None
 
 
 def parse_meter_reading(body: str) -> float | None:
@@ -338,10 +341,13 @@ def parse_curve(body: str) -> list[PointValue]:
     block = _jqplot_block(body)
     if not block:
         return []
-    return [
-        PointValue(datetime.strptime(m.group(1), "%Y-%m-%d %H:%M"), float(m.group(2)))
-        for m in RE_ROW_CURVE.finditer(block[1])
-    ]
+    points: list[PointValue] = []
+    for m in RE_ROW_CURVE.finditer(block[1]):
+        try:
+            points.append(PointValue(datetime.strptime(m.group(1), "%Y-%m-%d %H:%M"), float(m.group(2))))
+        except ValueError:                   # rozbitý řádek se přeskočí
+            continue
+    return points
 
 
 def parse_month_options(body: str) -> list[date]:

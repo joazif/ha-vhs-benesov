@@ -125,6 +125,8 @@ class HistoryImporter:
             hass, STORE_VERSION, f"{DOMAIN}.history.{entry_id}"
         )
         self._signature: tuple | None = None
+        # ID statistiky se po prvním určení nemění, i kdyby portál jednou nevrátil číslo měřidla.
+        self._statistic_id: str | None = None
         # Kdy integrace poprvé uviděla poslední odečet; z rozdílu proti času odečtu je vidět, jak
         # velké zpoždění portál zrovna má. None, dokud se změna odečtu nepozorovala.
         self.reading_seen_at: datetime | None = None
@@ -137,8 +139,28 @@ class HistoryImporter:
 
     @property
     def statistic_id(self) -> str:
+        if self._statistic_id is not None:
+            return self._statistic_id
         data = self._coordinator.data
         return statistic_id_for(data.meter_id if data else None, self._entry_id)
+
+    async def _async_ensure_statistic_id(self, data: MeterData) -> bool:
+        """Určit a uložit ID statistiky; bez čísla měřidla se statistika nezapisuje.
+
+        Kdyby se ID jednou odvodilo z jiného údaje (portál nevrátil číslo měřidla), zapisovalo by
+        se do jiné statistiky a součty by se rozdvojily.
+        """
+        if self._statistic_id is not None:
+            return True
+        stored = (await self._store.async_load() or {}).get("statistic_id")
+        if stored:
+            self._statistic_id = stored
+            return True
+        if not data.meter_id:
+            return False
+        self._statistic_id = statistic_id_for(data.meter_id, self._entry_id)
+        await self._merge_save({"statistic_id": self._statistic_id})
+        return True
 
     async def async_restore(self) -> None:
         """Po restartu HA ukázat, že historie už je stažená (stav není v paměti)."""
@@ -240,7 +262,7 @@ class HistoryImporter:
         if self._lock.locked():
             _LOGGER.debug("Import historie už běží")
             return
-        async with self._lock:
+        async with self._series_lock, self._lock:
             left = await self._cooldown_left(failure_wait)
             if left is not None:
                 minutes = max(1, round(left.total_seconds() / 60))
@@ -345,6 +367,9 @@ class HistoryImporter:
         if self.running:
             return
         try:
+            if not await self._async_ensure_statistic_id(data):
+                _LOGGER.debug("Portál nevrátil číslo měřidla, statistiku zatím nezapisuji")
+                return
             stored = await self._store.async_load() or {}
             # "written_to" je jen v záznamu nové verze; starší záznam ho nemá a import se opakuje.
             if _checkpoint_from(stored) is None and "written_to" not in stored:
@@ -358,7 +383,10 @@ class HistoryImporter:
                     )
                     return
             async with self._series_lock:
-                await self._async_update_series(data)
+                needs_import = await self._async_update_series(data)
+            if needs_import:
+                # Mimo zámek doplňování: import ho sám bere, aby se oba zápisy nepřekrývaly.
+                await self.async_import(automatic=True)
         except Exception:  # noqa: BLE001 - úkol na pozadí nesmí skončit potichu
             _LOGGER.exception("Doplnění statistiky spotřeby selhalo")
 
@@ -367,10 +395,11 @@ class HistoryImporter:
         last_step = max((p.at for p in data.curve_liters), default=None)
         return (data.last_reading, data.reading_m3, last_step, data.index_day)
 
-    async def _async_update_series(self, data: MeterData) -> None:
+    async def _async_update_series(self, data: MeterData) -> bool:
+        """Doplnit statistiku; vrací True, když zaostává tak, že je potřeba celý import."""
         signature = self._signature_of(data)
         if signature == self._signature:
-            return                                 # od posledního zápisu se nic nezměnilo
+            return False                           # od posledního zápisu se nic nezměnilo
         stored = await self._store.async_load() or {}
         checkpoint = _checkpoint_from(stored)
         index = {item.day: item.value for item in data.daily_index_m3}
@@ -382,13 +411,12 @@ class HistoryImporter:
             if months:
                 if len(months) > MAX_CATCH_UP_MONTHS:
                     _LOGGER.info("Statistika zaostává o %s měsíců, stahuji celou historii", len(months))
-                    await self.async_import(automatic=True)
-                    return
+                    return True
                 try:
                     extra = await self._coordinator.client.async_fetch_history(only_months=months)
                 except VhsError as err:
                     _LOGGER.debug("Doplnění starších dní se nepovedlo, zkusím příště: %s", err)
-                    return
+                    return False
                 index = {**extra.index_end, **index}
                 curve = {**extra.curve_liters, **curve}
 
@@ -410,6 +438,7 @@ class HistoryImporter:
                 written_to=self._format_time(saved["written_to"]),
             )
         self._signature = signature
+        return False
 
     @staticmethod
     def _missing_months(from_day: date, window_start: date) -> list[date]:

@@ -30,6 +30,9 @@ FULL_REFRESH_AFTER = timedelta(hours=24)
 # Portál občas přihlášení odmítne i se správným heslem, jednorázové odmítnutí se proto bere
 # jako výpadek. Při prvním načtení (bez dat) se neodkládá, nové heslo se pozná hned.
 AUTH_FAILURES_BEFORE_REAUTH = 3
+# Když se úvodní stránka nedá přečíst (změna webu), nejde poznat, jestli je odečet nový. Celé
+# stažení se pak dělá jen občas, ne při každé hodinové kontrole, ať se portál nezatěžuje.
+FULL_REFRESH_IF_UNREADABLE = timedelta(hours=6)
 
 
 class VhsBenesovCoordinator(DataUpdateCoordinator[MeterData]):
@@ -82,12 +85,17 @@ class VhsBenesovCoordinator(DataUpdateCoordinator[MeterData]):
             and now - self.last_full < FULL_REFRESH_AFTER
         ):
             probe = await self.client.async_probe()
-            if probe.known and (probe.last_reading, probe.reading_m3) == (
+            if not probe.known:
+                if now - self.last_full < FULL_REFRESH_IF_UNREADABLE:
+                    return self.data
+                _LOGGER.debug("Úvodní stránku se nepodařilo přečíst, stahuji data")
+            elif (probe.last_reading, probe.reading_m3) == (
                 self.data.last_reading,
                 self.data.reading_m3,
             ):
                 return self.data
-            _LOGGER.debug("Portál ukazuje nový odečet, stahuji data")
+            else:
+                _LOGGER.debug("Portál ukazuje nový odečet, stahuji data")
         data = await self.client.async_fetch_all()
         self._force_full = False
         self.last_full = now

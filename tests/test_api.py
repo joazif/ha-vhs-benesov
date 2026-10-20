@@ -652,3 +652,11 @@ def test_parse_retry_after():
     assert _parse_retry_after("-5") == 0.0
     when = format_datetime(datetime.now(UTC) + timedelta(seconds=90), usegmt=True)
     assert 80 <= _parse_retry_after(when) <= 90
+
+
+def test_impossible_dates_on_the_page_do_not_raise():
+    assert api.parse_last_reading("Poslední odečet z 31.02.2026 17:42") is None
+    assert api.parse_last_reading("Poslední odečet z 30.09.2026 25:99") is None
+    body = "<script>$.jqplot('graf', [[['2026-13-45 00:00', 5], ['2026-09-30 06:00', 7]]], {});</script>"
+    points = api.parse_curve(body)
+    assert [p.value for p in points] == [7.0]

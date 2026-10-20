@@ -32,11 +32,12 @@ async def _enable(recorder_mock, enable_custom_integrations):
 
 @pytest.fixture(autouse=True)
 def _unreadable_home_page_by_default():
-    """Lehká kontrola bez vlastního nastavení nic nezjistí, takže se stahuje všechno.
+    """Lehká kontrola bez vlastního nastavení ukáže vždy jiný odečet, takže se stahuje všechno.
 
     Testy, které chtějí sledovat kontrolu, ji přepíšou vlastním ``patch``.
     """
-    with patch(f"{CLIENT}.async_probe", return_value=api.ReadingProbe(None, None)):
+    always_new = api.ReadingProbe(datetime(1999, 1, 1), -1.0)
+    with patch(f"{CLIENT}.async_probe", return_value=always_new):
         yield
 
 
@@ -324,14 +325,19 @@ async def test_new_reading_triggers_full_download(hass: HomeAssistant):
     assert coordinator.data.reading_m3 == 912.0
 
 
-async def test_unreadable_home_page_falls_back_to_full_download(hass: HomeAssistant):
+async def test_unreadable_home_page_downloads_only_now_and_then(hass: HomeAssistant):
+    from custom_components.vhs_benesov.coordinator import FULL_REFRESH_IF_UNREADABLE
+
     entry, coordinator = await _setup_coordinator(hass, _data())
-    with patch(f"{CLIENT}.async_probe", return_value=api.ReadingProbe(None, None)), patch(
+    unreadable = api.ReadingProbe(None, None)
+    with patch(f"{CLIENT}.async_probe", return_value=unreadable), patch(
         f"{CLIENT}.async_fetch_all", return_value=_data()
     ) as full:
-        await coordinator.async_refresh()
-    assert full.call_count == 1
-
+        await coordinator.async_refresh()                  # právě staženo: stačí počkat
+        assert full.call_count == 0
+        coordinator.last_full = dt_util.now() - FULL_REFRESH_IF_UNREADABLE - timedelta(minutes=1)
+        await coordinator.async_refresh()                  # po delší době se stáhne celé
+        assert full.call_count == 1
 
 async def test_full_download_at_least_once_a_day_even_without_change(hass: HomeAssistant):
     from custom_components.vhs_benesov.coordinator import FULL_REFRESH_AFTER
@@ -1926,3 +1932,39 @@ async def test_redirect_loop_error_is_retried_not_reauth(hass: HomeAssistant):
     assert not any(
         f["context"]["source"] == SOURCE_REAUTH for f in hass.config_entries.flow.async_progress()
     )
+
+
+async def test_statistic_id_does_not_change_when_the_portal_once_omits_the_meter_number(
+    hass: HomeAssistant,
+):
+    entry = _entry_with_history(option=False)
+    entry.add_to_hass(hass)
+    with patch(f"{CLIENT}.async_fetch_all", return_value=_series_data(6, 5)):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await async_wait_recording_done(hass)
+    assert len(await _stats(hass, STAT_ID)) == 5 * 24
+
+    nameless = _series_data(7, 6, start_offset=-1)
+    nameless.meter_id = None                                 # stránka měřidlo jednou nevrátila
+    await _refresh(hass, entry, nameless)
+    assert len(await _stats(hass, STAT_ID)) == 6 * 24        # pokračuje se do téže statistiky
+    entry_based = "vhs_benesov:" + entry.entry_id.lower() + "_consumption"
+    assert await _stats(hass, entry_based) == []             # a nevznikla žádná druhá
+    assert entry.runtime_data.history.statistic_id == STAT_ID
+
+
+async def test_statistic_is_not_written_at_all_when_the_meter_number_was_never_known(
+    hass: HomeAssistant,
+):
+    entry = _entry_with_history(option=False)
+    entry.add_to_hass(hass)
+    nameless = _series_data(6, 5)
+    nameless.meter_id = None
+    with patch(f"{CLIENT}.async_fetch_all", return_value=nameless):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await async_wait_recording_done(hass)
+    entry_based = "vhs_benesov:" + entry.entry_id.lower() + "_consumption"
+    assert await _stats(hass, entry_based) == []
+    assert await _stats(hass, STAT_ID) == []
