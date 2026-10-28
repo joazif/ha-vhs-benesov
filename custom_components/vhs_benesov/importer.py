@@ -28,15 +28,24 @@ from homeassistant.components.recorder.models import (
     StatisticMeanType,
     StatisticMetaData,
 )
-from homeassistant.components.recorder.statistics import async_add_external_statistics
+from homeassistant.components.recorder.statistics import (
+    async_add_external_statistics,
+    statistics_during_period,
+)
 from homeassistant.const import UnitOfVolume
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .api import MeterData, VhsError
+from .api import MeterData, VhsError, latest_complete_day
 from .const import CONF_IMPORT_HISTORY, DOMAIN
-from .history import Checkpoint, SeriesUpdate, series_update
+from .history import (
+    Checkpoint,
+    SeriesUpdate,
+    local_day_bounds,
+    month_to_date_windows,
+    series_update,
+)
 
 if TYPE_CHECKING:
     from .coordinator import VhsBenesovCoordinator
@@ -56,6 +65,11 @@ AUTO_RETRY_AFTER_FAILURE = timedelta(hours=6)
 # řeší novým importem celé historie.
 MAX_CATCH_UP_MONTHS = 3
 STATISTIC_NAME = "Spotřeba vody (VHS Benešov)"
+
+
+def _seconds(value: Any) -> float:
+    """Začátek řádku statistiky v sekundách (rekordér dává číslo, starší verze datetime)."""
+    return value.timestamp() if isinstance(value, datetime) else float(value)
 
 
 def statistic_id_for(meter_id: str | None, entry_id: str) -> str:
@@ -131,6 +145,8 @@ class HistoryImporter:
         # velké zpoždění portál zrovna má. None, dokud se změna odečtu nepozorovala.
         self.reading_seen_at: datetime | None = None
         self._seen_reading: datetime | None = None
+        # Tento měsíc proti stejným dnům loni (ze statistiky spotřeby); None bez dat.
+        self.month_comparison: dict[str, Any] | None = None
         self.status = HistoryStatus()
 
     @property
@@ -387,6 +403,8 @@ class HistoryImporter:
             if needs_import:
                 # Mimo zámek doplňování: import ho sám bere, aby se oba zápisy nepřekrývaly.
                 await self.async_import(automatic=True)
+                return
+            await self._async_update_month_comparison(data)
         except Exception:  # noqa: BLE001 - úkol na pozadí nesmí skončit potichu
             _LOGGER.exception("Doplnění statistiky spotřeby selhalo")
 
@@ -439,6 +457,56 @@ class HistoryImporter:
             )
         self._signature = signature
         return False
+
+    async def _async_update_month_comparison(self, data: MeterData) -> None:
+        """Spotřeba od začátku měsíce do posledního úplného dne proti týmž dnům loni.
+
+        Počítá se z vlastní statistiky spotřeby (žádný dotaz na portál navíc). Obě období
+        končí stejným dnem v měsíci, aby zpoždění portálu nepodhodnotilo letošek.
+        """
+        found = latest_complete_day(data.curve_liters)
+        if not found:
+            self._set_month_comparison(None)
+            return
+        (now_first, now_last), (then_first, then_last) = month_to_date_windows(found[0])
+        instance = get_instance(self._hass)
+        wait = getattr(instance, "async_block_till_done", None)
+        if wait is not None:
+            await wait()                       # ať jsou v databázi i právě zapsané hodiny
+        tz = dt_util.get_default_time_zone()
+        sid = self.statistic_id
+
+        def total(first: date, last: date) -> tuple[float, int]:
+            start, end = local_day_bounds(first, last, tz)
+            rows = statistics_during_period(
+                self._hass, start, end, {sid}, "day",
+                {"volume": UnitOfVolume.CUBIC_METERS}, {"change"},
+            ).get(sid, [])
+            # Rekordér může vrátit i den těsně před začátkem (kvůli výpočtu změny); bereme jen
+            # dny, které do období opravdu patří.
+            lo, hi = start.timestamp(), end.timestamp()
+            rows = [row for row in rows if lo <= _seconds(row["start"]) < hi]
+            return sum(row.get("change") or 0.0 for row in rows), len(rows)
+
+        now_m3, now_days = await instance.async_add_executor_job(total, now_first, now_last)
+        then_m3, then_days = await instance.async_add_executor_job(total, then_first, then_last)
+        if not now_days or not then_days or then_m3 <= 0:
+            self._set_month_comparison(None)
+            return
+        self._set_month_comparison(
+            {
+                "now_m3": now_m3,
+                "then_m3": then_m3,
+                "change_percent": (now_m3 / then_m3 - 1) * 100,
+                "now_from": now_first, "now_to": now_last,
+                "then_from": then_first, "then_to": then_last,
+            }
+        )
+
+    def _set_month_comparison(self, value: dict[str, Any] | None) -> None:
+        if value != self.month_comparison:
+            self.month_comparison = value
+            self._coordinator.async_update_listeners()
 
     @staticmethod
     def _missing_months(from_day: date, window_start: date) -> list[date]:

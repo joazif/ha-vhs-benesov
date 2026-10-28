@@ -97,6 +97,9 @@
       },
       "compare_summary": {
         "name": "Comparison with last year"
+      },
+      "month_vs_last_year": {
+        "name": "This month vs last year"
       }
     },
     "button": {

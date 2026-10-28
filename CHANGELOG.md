@@ -1,5 +1,13 @@
 # Změny
 
+## 0.1.6
+
+### Přidáno
+- Senzor **Tento měsíc proti loňsku**: spotřeba od začátku měsíce do posledního úplného dne
+  proti týmž dnům loni, jednou větou (`o 15 % méně (−1 840 l)`). Na rozdíl od srovnání celých
+  měsíců se mění každý den. Počítá se ze statistiky spotřeby (žádné dotazy na portál navíc);
+  atributy `obdobi`, `spotreba_m3`, `loni_m3`, `zmena_procent`.
+
 ## 0.1.5
 
 ### Přidáno

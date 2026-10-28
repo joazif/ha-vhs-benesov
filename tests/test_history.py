@@ -320,3 +320,15 @@ def test_incremental_update_across_the_winter_time_change_equals_full_rebuild():
     assert day == first_day + timedelta(days=n - 1)
     transition = [r for r in later.rows if r["start"].astimezone(PRAGUE).date() == date(2026, 10, 25)]
     assert len(transition) == 25
+
+
+def test_month_to_date_windows_compare_the_same_days_a_year_ago():
+    assert history.month_to_date_windows(date(2026, 10, 27)) == (
+        (date(2026, 10, 1), date(2026, 10, 27)), (date(2025, 10, 1), date(2025, 10, 27))
+    )
+    # Přestupný rok: 29. 2. loni neexistuje, loňské období končí 28. 2.
+    assert history.month_to_date_windows(date(2028, 2, 29)) == (
+        (date(2028, 2, 1), date(2028, 2, 29)), (date(2027, 2, 1), date(2027, 2, 28))
+    )
+    start, end = history.local_day_bounds(date(2026, 10, 25), date(2026, 10, 25), PRAGUE)
+    assert end - start == timedelta(hours=25)              # den se změnou času

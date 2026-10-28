@@ -79,17 +79,27 @@ def _volume_text(m3: float, units: str) -> str:
     return f"{sign}{litres} l"
 
 
-def _compare_summary(data: MeterData, months: int, units: str) -> str | None:
-    """Srovnání s loňskem jednou větou: "o 42 % víc (+19 535 l)" / "o 12 % méně (−4 210 l)"."""
-    result = _year_over_year(data, months)
-    if not result:
-        return None
+def _summary_text(result: dict, units: str) -> str:
+    """Věta se znaménkem: "o 42 % víc (+19 535 l)", "o 12 % méně (−4 210 l)"."""
     percent = round(result["change_percent"])
     diff = result["now_m3"] - result["then_m3"]
     if percent == 0:
         return f"stejně jako loni ({_volume_text(diff, units)})"
     word = "víc" if percent > 0 else "méně"
     return f"o {abs(percent)} % {word} ({_volume_text(diff, units)})"
+
+
+def _compare_summary(data: MeterData, months: int, units: str) -> str | None:
+    """Srovnání s loňskem jednou větou (celé měsíce)."""
+    result = _year_over_year(data, months)
+    return _summary_text(result, units) if result else None
+
+
+def _day_span(first: date, last: date) -> str:
+    """"1.–27. 10." (jeden den "1. 10.")."""
+    if first == last:
+        return f"{first.day}. {first.month}."
+    return f"{first.day}.–{last.day}. {last.month}."
 
 
 def _this_week_m3(data: MeterData) -> float | None:
@@ -231,6 +241,7 @@ async def async_setup_entry(
     async_add_entities(
         [
             *(VhsSensor(coordinator, entry.entry_id, d) for d in SENSORS),
+            MonthComparisonSensor(coordinator, entry.entry_id),
             LastUpdateSensor(coordinator, entry.entry_id),
             HistoryStatusSensor(coordinator, entry.entry_id),
             *(DayPartSensor(coordinator, entry.entry_id, hour) for hour in DAY_PART_HOURS),
@@ -314,6 +325,48 @@ class VhsSensor(VhsBenesovEntity, SensorEntity):
                 attrs["zmena_procent"] = round(result["change_percent"], 1)
             return attrs
         return None
+
+
+class MonthComparisonSensor(VhsBenesovEntity, SensorEntity):
+    """Tento měsíc do posledního úplného dne proti týmž dnům loni, jednou větou.
+
+    Na rozdíl od srovnání celých měsíců se mění každý den. Počítá se ze statistiky spotřeby.
+    """
+
+    _attr_translation_key = "month_vs_last_year"
+    _attr_icon = "mdi:calendar-compare"
+
+    def __init__(self, coordinator: VhsBenesovCoordinator, entry_id: str) -> None:
+        super().__init__(coordinator, entry_id)
+        self._attr_unique_id = f"{entry_id}_month_vs_last_year"
+
+    def _result(self) -> dict[str, Any] | None:
+        importer = self.coordinator.history
+        return importer.month_comparison if importer else None
+
+    @property
+    def native_value(self) -> str | None:
+        result = self._result()
+        if result is None:
+            return None
+        units = str(self.coordinator.config_entry.options.get(CONF_UNITS, DEFAULT_UNITS)).lower()
+        return _summary_text(result, units)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        result = self._result()
+        if result is None:
+            return None
+        return {
+            # "1.–27. 10. 25 vs 1.–27. 10. 26" (loni proti letošku, jako u srovnání měsíců).
+            "obdobi": (
+                f"{_day_span(result['then_from'], result['then_to'])} {result['then_from'].year % 100:02d}"
+                f" vs {_day_span(result['now_from'], result['now_to'])} {result['now_from'].year % 100:02d}"
+            ),
+            "spotreba_m3": round(result["now_m3"], 3),
+            "loni_m3": round(result["then_m3"], 3),
+            "zmena_procent": round(result["change_percent"], 1),
+        }
 
 
 class LastUpdateSensor(VhsBenesovEntity, SensorEntity):

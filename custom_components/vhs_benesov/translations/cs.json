@@ -97,6 +97,9 @@
       },
       "compare_summary": {
         "name": "Srovnání s loňskem"
+      },
+      "month_vs_last_year": {
+        "name": "Tento měsíc proti loňsku"
       }
     },
     "button": {

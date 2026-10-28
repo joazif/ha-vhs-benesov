@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+import calendar
 from datetime import UTC, date, datetime, timedelta, tzinfo
 
 BUCKET_HOURS = (0, 6, 12, 18)
@@ -230,3 +231,19 @@ def series_update(
         rows,
         Checkpoint(through + timedelta(days=1), float(index_end[through]), done[-1]["sum"]),
     )
+
+
+def month_to_date_windows(last_day: date) -> tuple[tuple[date, date], tuple[date, date]]:
+    """Dny od 1. v měsíci do ``last_day`` letos a tytéž dny o rok dřív (obě meze včetně).
+
+    Loňský měsíc může být kratší (29. 2.), konec se pak zkrátí na jeho poslední den.
+    """
+    first = last_day.replace(day=1)
+    year_ago = first.replace(year=first.year - 1)
+    days_then = calendar.monthrange(year_ago.year, year_ago.month)[1]
+    return (first, last_day), (year_ago, year_ago.replace(day=min(last_day.day, days_then)))
+
+
+def local_day_bounds(first: date, last: date, tz: tzinfo) -> tuple[datetime, datetime]:
+    """Začátek prvního a konec posledního dne (místní půlnoci) v UTC."""
+    return _local_midnight(first, tz), _local_midnight(last + timedelta(days=1), tz)

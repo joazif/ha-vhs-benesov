@@ -1010,7 +1010,8 @@ def test_sensor_names_sort_alphabetically_into_a_logical_order():
     )["entity"]["sensor"]
     main = [
         "meter_index", "last_reading", "last_complete_day",
-        "consumption_week", "consumption_month", "compare_summary", "change_vs_last_year",
+        "consumption_week", "consumption_month", "compare_summary", "month_vs_last_year",
+        "change_vs_last_year",
         "change_vs_last_year_m3", "compare_period",
     ]
     names = [sensors[k]["name"] for k in main]
@@ -2030,3 +2031,65 @@ async def test_comparison_summary_sensor_follows_the_unit_option(hass: HomeAssis
     assert registry.async_get(entity_id).entity_category is None      # mezi Senzory
     assert state.state == "o 50 % víc (+15,0 m³)"                     # testy počítají v m³
     assert state.attributes["obdobi"] == _expected_period(3)
+
+
+async def test_this_month_is_compared_with_the_same_days_last_year(hass: HomeAssistant):
+    from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
+    from homeassistant.components.recorder.statistics import async_add_external_statistics
+
+    entry = _entry_with_history(option=False)
+    entry.add_to_hass(hass)
+    with patch(f"{CLIENT}.async_fetch_all", return_value=_data()):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done(wait_background_tasks=True)
+    importer = entry.runtime_data.history
+
+    tz = dt_util.get_default_time_zone()
+    meta = StatisticMetaData(
+        mean_type=StatisticMeanType.NONE, has_sum=True, name="x", source=DOMAIN,
+        statistic_id=STAT_ID, unit_class="volume", unit_of_measurement="m³",
+    )
+
+    def rows(year, per_day):
+        start = datetime(year, 9, 28, tzinfo=tz).astimezone(UTC)
+        out, total = [], 0.0
+        for h in range(24 * 10):                       # 28. 9. až 7. 10.
+            total += per_day / 24
+            out.append(StatisticData(start=start + timedelta(hours=h), state=total, sum=total))
+        return out
+
+    async_add_external_statistics(hass, meta, rows(2025, 0.5) + rows(2026, 0.6))
+    await async_wait_recording_done(hass)
+
+    data = _data()
+    data.curve_liters = [
+        api.PointValue(datetime(2026, 10, 5, h), 150.0) for h in (0, 6, 12, 18)
+    ]                                                  # poslední úplný den 5. 10.
+    await importer._async_update_month_comparison(data)
+    await hass.async_block_till_done()
+
+    result = importer.month_comparison
+    assert result["now_m3"] == pytest.approx(3.0)      # 1.-5. 10. 2026 po 0,6 m³
+    assert result["then_m3"] == pytest.approx(2.5)     # 1.-5. 10. 2025 po 0,5 m³
+    entity_id = er.async_get(hass).async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_month_vs_last_year"
+    )
+    state = hass.states.get(entity_id)
+    assert state.state == "o 20 % víc (+0,5 m³)"
+    assert state.attributes["obdobi"] == "1.–5. 10. 25 vs 1.–5. 10. 26"
+    assert state.attributes["zmena_procent"] == pytest.approx(20.0)
+
+
+async def test_month_comparison_is_unknown_without_last_years_data(hass: HomeAssistant):
+    entry = _entry_with_history(option=False)
+    entry.add_to_hass(hass)
+    with patch(f"{CLIENT}.async_fetch_all", return_value=_data()):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done(wait_background_tasks=True)
+    data = _data()
+    data.curve_liters = [api.PointValue(datetime(2026, 10, 5, h), 150.0) for h in (0, 6, 12, 18)]
+    await entry.runtime_data.history._async_update_month_comparison(data)
+    entity_id = er.async_get(hass).async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_month_vs_last_year"
+    )
+    assert hass.states.get(entity_id).state == "unknown"
