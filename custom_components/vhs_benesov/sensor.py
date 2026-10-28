@@ -175,6 +175,7 @@ SENSORS: tuple[VhsSensorDescription, ...] = (
     VhsSensorDescription(
         key="compare_period",
         translation_key="compare_period",
+        entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:calendar-range",
         value_fn=_compare_period,
         uses_compare_months=True,
@@ -212,6 +213,7 @@ SENSORS: tuple[VhsSensorDescription, ...] = (
     VhsSensorDescription(
         key="change_vs_last_year",
         translation_key="change_vs_last_year",
+        entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:trending-up",
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
@@ -222,6 +224,7 @@ SENSORS: tuple[VhsSensorDescription, ...] = (
     VhsSensorDescription(
         key="change_vs_last_year_m3",
         translation_key="change_vs_last_year_m3",
+        entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:water-plus",
         device_class=SensorDeviceClass.WATER,
         native_unit_of_measurement=UnitOfVolume.CUBIC_METERS,
@@ -334,7 +337,7 @@ class MonthComparisonSensor(VhsBenesovEntity, SensorEntity):
     """
 
     _attr_translation_key = "month_vs_last_year"
-    _attr_icon = "mdi:calendar-compare"
+    _attr_icon = "mdi:calendar-month"
 
     def __init__(self, coordinator: VhsBenesovCoordinator, entry_id: str) -> None:
         super().__init__(coordinator, entry_id)

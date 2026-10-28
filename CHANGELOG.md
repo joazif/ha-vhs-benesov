@@ -1,5 +1,17 @@
 # Změny
 
+## 0.1.7
+
+### Změněno
+- Srovnání s loňskem je přehlednější. Mezi Senzory zůstaly dvě věty vedle sebe: **Proti loňsku –
+  poslední měsíce** (dřív *Srovnání s loňskem*) a **Proti loňsku – tento měsíc** (dřív *Tento
+  měsíc proti loňsku*). Číselné *Změna oproti loňsku v % / v objemu / za období* se přesunuly do
+  Diagnostiky, kde dál slouží grafům a automatizacím. ID entit se nemění.
+
+### Opraveno
+- *Proti loňsku – tento měsíc* měl ikonu, která v Home Assistantu neexistuje; teď má
+  `mdi:calendar-month`.
+
 ## 0.1.6
 
 ### Přidáno

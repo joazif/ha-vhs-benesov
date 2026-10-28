@@ -1008,11 +1008,10 @@ def test_sensor_names_sort_alphabetically_into_a_logical_order():
     sensors = json.loads(
         (root / "custom_components/vhs_benesov/translations/cs.json").read_text("utf-8")
     )["entity"]["sensor"]
+    # Senzory: stav, odečet, obě srovnání s loňskem vedle sebe, pak spotřeby.
     main = [
-        "meter_index", "last_reading", "last_complete_day",
-        "consumption_week", "consumption_month", "compare_summary", "month_vs_last_year",
-        "change_vs_last_year",
-        "change_vs_last_year_m3", "compare_period",
+        "meter_index", "last_reading", "compare_summary", "month_vs_last_year",
+        "last_complete_day", "consumption_week", "consumption_month",
     ]
     names = [sensors[k]["name"] for k in main]
     assert names == sorted(names, key=str.casefold), names
@@ -1021,6 +1020,7 @@ def test_sensor_names_sort_alphabetically_into_a_logical_order():
     diag = [
         "day_part_00", "day_part_06", "day_part_12", "day_part_18",
         "last_complete_day_date", "last_update", "history_status",
+        "change_vs_last_year", "change_vs_last_year_m3", "compare_period",
     ]
     diag_names = [sensors[k]["name"] for k in diag]
     assert diag_names == sorted(diag_names, key=str.casefold), diag_names
@@ -1516,7 +1516,7 @@ async def _period_state(hass, entry):
 async def test_comparison_period_sensor_shows_which_months_are_compared(hass: HomeAssistant):
     entry, _ = await _setup_with_monthly(hass, _monthly_back_from_today(15.0, 10.0))
     record, state = await _period_state(hass, entry)
-    assert record.entity_category is None            # je ve Senzorech, vedle obou změn
+    assert record.entity_category is EntityCategory.DIAGNOSTIC   # čísla pro grafy jsou v Diagnostice
     assert state.state == _expected_period(3)
     assert " vs " in state.state
 
@@ -1542,22 +1542,25 @@ async def test_comparison_period_unknown_without_last_years_data(hass: HomeAssis
     assert state.state == "unknown"
 
 
-async def test_comparison_period_moves_from_diagnostics_to_sensors_for_existing_entities(hass: HomeAssistant):
-    """Instalace, která měla senzor v Diagnostice, ho po aktualizaci má ve Senzorech."""
+async def test_number_comparison_sensors_move_to_diagnostics_for_existing_entities(hass: HomeAssistant):
+    """Instalace, která měla číselná srovnání mezi Senzory, je po aktualizaci má v Diagnostice."""
     entry = _entry()
     entry.add_to_hass(hass)
     registry = er.async_get(hass)
-    registry.async_get_or_create(
-        "sensor", DOMAIN, f"{entry.entry_id}_compare_period", config_entry=entry,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    )
+    for key in ("compare_period", "change_vs_last_year", "change_vs_last_year_m3"):
+        registry.async_get_or_create("sensor", DOMAIN, f"{entry.entry_id}_{key}", config_entry=entry)
     data = _data()
     data.monthly_m3 = _monthly_back_from_today(15.0, 10.0)
     with patch(f"{CLIENT}.async_fetch_all", return_value=data):
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-    record, _ = await _period_state(hass, entry)
-    assert record.entity_category is None
+    for key in ("compare_period", "change_vs_last_year", "change_vs_last_year_m3"):
+        entity_id = registry.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_{key}")
+        assert registry.async_get(entity_id).entity_category is EntityCategory.DIAGNOSTIC, key
+    for key in ("compare_summary", "month_vs_last_year"):
+        entity_id = registry.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_{key}")
+        assert registry.async_get(entity_id).entity_category is None, key
+
 
 
 def test_the_three_comparison_sensors_sort_next_to_each_other():

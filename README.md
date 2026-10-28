@@ -74,21 +74,18 @@ vodoměry nezaměnily.
 ## Senzory
 
 Zařízení se jmenuje podle čísla měřidla. Názvy se na stránce zařízení řadí abecedně zároveň
-logicky: stav, poslední odečet, den, týden, měsíc. Objemy se zobrazují v jednotce, kterou jsi
+logicky: stav, poslední odečet, srovnání s loňskem, den, týden, měsíc. Objemy se zobrazují v jednotce, kterou jsi
 zvolil (výchozí litry, viz Jednotky); atributy s `_m3` v názvu jsou vždy v m³.
 
 | Senzor | Stav | Atributy |
 |---|---|---|
 | Aktuální stav vodoměru | `912 027 l` (`912,027 m³`) | `stav_k_datu`, `stav_k_casu` |
 | Poslední odečet | datum a čas | `zverejneno`, `zpozdeni_hodin` |
+| Proti loňsku – poslední měsíce | `o 68 % víc (+27 000 l)` | `obdobi` |
+| Proti loňsku – tento měsíc | `o 15 % méně (−1 840 l)` | `obdobi`, `spotreba_m3`, `loni_m3`, `zmena_procent` |
 | Spotřeba poslední úplný den | `875 l` | `den` |
 | Spotřeba tento týden | `1 581 l` | — |
 | Spotřeba v tomto měsíci | `20 751 l` | — |
-| Srovnání s loňskem | `o 68 % víc (+27 000 l)` | `obdobi` |
-| Tento měsíc proti loňsku | `o 15 % méně (−1 840 l)` | `obdobi`, `spotreba_m3`, `loni_m3`, `zmena_procent` |
-| Změna oproti loňsku v % | `68 %` | `obdobi`, `spotreba_m3`, `loni_m3`, `rozdil_m3` |
-| Změna oproti loňsku v objemu | `27 000 l` (`27 m³`) | `obdobi`, `spotreba_m3`, `loni_m3`, `zmena_procent` |
-| Změna oproti loňsku za období | `6–8/25 vs 6–8/26` | — |
 
 - **Poslední odečet** má atributy `zverejneno` (kdy integrace nový odečet poprvé uviděla) a
   `zpozdeni_hodin` (o kolik později, než byl odečten). Ukazují, jaké zpoždění portál zrovna má.
@@ -102,15 +99,16 @@ zvolil (výchozí litry, viz Jednotky); atributy s `_m3` v názvu jsou vždy v m
   celý. Den, ke kterému patří, ukazuje atribut `den` a v Diagnostice senzor *Den spotřeby*.
 - **Spotřeba tento týden** se počítá od pondělí do posledního dne, který portál zná, včetně
   neúplného, takže do dalšího odečtu ještě roste.
-- **Změna oproti loňsku** srovnává poslední tři úplné měsíce se stejnými třemi o rok dřív
-  (např. 6–8/2026 proti 6–8/2025; které měsíce to jsou, ukazuje *Změna oproti loňsku za období* ve tvaru `6–8/25 vs 6–8/26`, loni proti letošku); měsíc posledního odečtu je neúplný a nepočítá se. Kladné
-  číslo je růst, záporné pokles. *Srovnání s loňskem* totéž řekne jednou větou se znaménkem
-  (`o 12 % méně (−4 210 l)`), v jednotce z nastavení. Obojí srovnává **celé měsíce**, takže se
-  mění jen jednou za měsíc.
-- **Tento měsíc proti loňsku** se mění každý den: spotřeba od 1. dne měsíce do posledního
+- **Proti loňsku – poslední měsíce** srovnává poslední úplné měsíce se stejnými měsíci o rok
+  dřív (výchozí tři, např. `7–9/25 vs 7–9/26` v atributu `obdobi`), jednou větou se znaménkem
+  v jednotce z nastavení. Měsíc posledního odečtu je neúplný a nepočítá se, proto se hodnota
+  mění jen jednou za měsíc. Počet měsíců (1, 3 nebo 6) jde změnit v nastavení; 12 nejde, portál
+  nabízí jen 24 měsíců.
+- **Proti loňsku – tento měsíc** se mění každý den: spotřeba od 1. dne měsíce do posledního
   úplného dne proti týmž dnům loni (např. `1.–27. 10. 25 vs 1.–27. 10. 26`). Počítá se ze
-  statistiky spotřeby, takže potřebuje staženou historii. Prvních pár dní v měsíci hodně kolísá. Bez dat za loňský rok je stav `unknown`. Počet měsíců (1, 3
-  nebo 6) jde změnit v nastavení; 12 nejde, portál nabízí jen 24 měsíců.
+  statistiky spotřeby, takže potřebuje staženou historii. Prvních pár dní v měsíci hodně kolísá.
+- Obě srovnání jsou bez dat za loňský rok `unknown`. Stejná čísla zvlášť (procenta, objem,
+  období) jsou v Diagnostice pro grafy a automatizace.
 - Čas z portálu je místní. *Poslední odečet* je časové razítko, jeho tvar určuje tvůj profil.
 
 ### Ovládací prvky
@@ -126,6 +124,9 @@ zvolil (výchozí litry, viz Jednotky); atributy s `_m3` v názvu jsou vždy v m
 | Den spotřeby | `28. 9. 2026` | — |
 | Poslední kontrola portálu | `30.09.2026 14:05` | `cas`, `posledni_pokus_uspesny`, `posledni_stazeni_dat`, `interval_kontroly_hodin` |
 | Stav historie | `stahuji z portálu (38/53 měsíců)` | `postup`, `postup_procent`, `od`, `do`, `zaznamu`, `poznamka` |
+| Změna oproti loňsku v % | `68 %` | `obdobi`, `spotreba_m3`, `loni_m3`, `rozdil_m3` |
+| Změna oproti loňsku v objemu | `27 000 l` (`27 m³`) | `obdobi`, `spotreba_m3`, `loni_m3`, `zmena_procent` |
+| Změna oproti loňsku za období | `6–8/25 vs 6–8/26` | — |
 
 **Části dne** ukazují litry v šestihodinovém kroku za poslední úplný den. `prumer_l` je průměr
 téže části dne z posledních až 30 úplných dnů (noc se srovnává jen s dřívějšími nocemi), takže

@@ -96,10 +96,10 @@
         "name": "Change vs last year period"
       },
       "compare_summary": {
-        "name": "Comparison with last year"
+        "name": "Vs last year – recent months"
       },
       "month_vs_last_year": {
-        "name": "This month vs last year"
+        "name": "Vs last year – this month"
       }
     },
     "button": {

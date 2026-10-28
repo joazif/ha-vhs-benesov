@@ -96,10 +96,10 @@
         "name": "Změna oproti loňsku za období"
       },
       "compare_summary": {
-        "name": "Srovnání s loňskem"
+        "name": "Proti loňsku – poslední měsíce"
       },
       "month_vs_last_year": {
-        "name": "Tento měsíc proti loňsku"
+        "name": "Proti loňsku – tento měsíc"
       }
     },
     "button": {
