@@ -36,18 +36,14 @@
 
 ### Marketplace (doporučeno)
 
-Home Assistant 2026.11 a novější má HACS vestavěný jako **Marketplace**.
+1. **Nastavení → Marketplace** (na Home Assistantu 2026.10 a starším **HACS**), vyhledej **VHS Benešov** a klikni **Instalovat**
 
-1. **Nastavení → Marketplace**, vyhledej **VHS Benešov** a klikni **Instalovat**
+   [![Otevřít v Marketplace](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=joazif&repository=ha-vhs-benesov&category=integration)
+
 2. Restartuj Home Assistant
 3. **Nastavení → Zařízení a služby → Přidat integraci → VHS Benešov**
 
-[![Otevřít v Marketplace](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=joazif&repository=ha-vhs-benesov&category=integration)
-[![Přidat integraci](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=vhs_benesov)
-
-Na Home Assistantu 2026.10 a starším je postup stejný, jen místo
-Marketplace otevřeš **HACS** a klikneš **Download**. Tlačítko výše otevře
-Marketplace i HACS podle verze.
+   [![Přidat integraci](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=vhs_benesov)
 
 Ručně: zkopíruj `custom_components/vhs_benesov/` do `/config/custom_components/` a restartuj.
 

@@ -1,5 +1,10 @@
 # Změny
 
+## Nevydáno
+
+### Změněno
+- README: tlačítka instalace jsou přímo u kroků, které dělají.
+
 ## 0.1.8
 
 ### Změněno
