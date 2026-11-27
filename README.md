@@ -12,7 +12,7 @@
 <p align="center">
   <img alt="Verze" src="https://img.shields.io/github/v/release/joazif/ha-vhs-benesov?style=flat-square&color=00529c&label=verze">
   <img alt="Stažení" src="https://img.shields.io/github/downloads/joazif/ha-vhs-benesov/total?style=flat-square&color=00529c&label=sta%C5%BEen%C3%AD">
-  <img alt="HACS" src="https://img.shields.io/badge/HACS-vlastn%C3%AD%20repozit%C3%A1%C5%99-00529c?style=flat-square">
+  <img alt="Marketplace" src="https://img.shields.io/badge/Marketplace-integrace-00529c?style=flat-square">
   <img alt="Home Assistant" src="https://img.shields.io/badge/Home%20Assistant-2026.9%2B-00529c?style=flat-square">
 </p>
 
@@ -34,15 +34,20 @@
 
 ## Instalace
 
-[![Otevřít repozitář v HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=joazif&repository=ha-vhs-benesov&category=integration)
+### Marketplace (doporučeno)
 
-1. V HACS vyhledej **VHS Benešov**, klikni **Download** a restartuj Home Assistant
-2. **Nastavení → Zařízení a služby → Přidat integraci → VHS Benešov**
+Home Assistant 2026.11 a novější má HACS vestavěný jako **Marketplace**.
 
-Kdyby ji HACS ve vyhledávání ještě nenabídl: HACS → ⋮ → **Custom repositories** →
-`https://github.com/joazif/ha-vhs-benesov`, kategorie **Integration**, a pokračuj stejně.
+1. **Nastavení → Marketplace**, vyhledej **VHS Benešov** a klikni **Instalovat**
+2. Restartuj Home Assistant
+3. **Nastavení → Zařízení a služby → Přidat integraci → VHS Benešov**
 
+[![Otevřít v Marketplace](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=joazif&repository=ha-vhs-benesov&category=integration)
 [![Přidat integraci](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=vhs_benesov)
+
+Na Home Assistantu 2026.10 a starším je postup stejný, jen místo
+Marketplace otevřeš **HACS** a klikneš **Download**. Tlačítko výše otevře
+Marketplace i HACS podle verze.
 
 Ručně: zkopíruj `custom_components/vhs_benesov/` do `/config/custom_components/` a restartuj.
 
@@ -256,8 +261,8 @@ stejné délky**, tedy s předchozím měsícem, ne se stejným měsícem loni. 
 
 **Letos proti loňsku po dnech:** základní karty Home Assistantu nedovedou zobrazit stejné období
 o rok dřív, proto je potřeba karta
-[ApexCharts Card](https://github.com/RomRider/apexcharts-card) (*HACS → Frontend → Stáhnout*,
-pak obnovit stránku). Řada *Loni* se posune o 365 dní a leží přes letošní. Popisek s hodnotami
+[ApexCharts Card](https://github.com/RomRider/apexcharts-card) z Marketplace (dříve HACS),
+po stažení obnov stránku. Řada *Loni* se posune o 365 dní a leží přes letošní. Popisek s hodnotami
 je nad grafem (datum a pod sebou Letos a Loni s barevnými kolečky); k úpravě rámečku slouží
 [card-mod](https://github.com/thomasloven/lovelace-card-mod), bez něj karta funguje, jen bude
 popisek širší.
