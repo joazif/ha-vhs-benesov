@@ -1,6 +1,6 @@
 # Změny
 
-## Nevydáno
+## 0.1.8
 
 ### Změněno
 - README: instalace přes Marketplace (HACS vestavěný v Home Assistantu od 2026.11), pro starší
